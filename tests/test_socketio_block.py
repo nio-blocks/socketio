@@ -3,6 +3,7 @@ from nio.util.support.block_test_case import NIOBlockTestCase
 from nio.common.signal.base import Signal
 from unittest.mock import MagicMock, patch
 
+
 @patch('socketio.socketio_block.SocketIOWebSocketClient.send_event')
 @patch('socketio.socketio_block.SocketIOWebSocketClient.connect')
 @patch('socketio.socketio_block.SocketIOWebSocketClient.close')

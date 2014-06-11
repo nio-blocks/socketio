@@ -200,7 +200,8 @@ class SocketIO(Block):
     def handle_reconnect(self):
         self._timeout = self._timeout or 1
         self._client = None
-        self._logger.debug("Attempting to reconnect in {0} seconds.".format(self._timeout))
+        self._logger.debug("Attempting to reconnect in {0} seconds."
+                           .format(self._timeout))
         if self._timeout <= 64:
             self._logger.debug("Attempting to reconnect")
             Job(
@@ -281,7 +282,8 @@ class SocketIO(Block):
                 message = eval_signal(signal, self.content, self._logger)
             except Exception as e:
                 message = None
-                self._logger.error("Invalid content expression: %s" % self.content)
+                self._logger.error("Invalid content expression: %s"
+                                   % self.content)
                 self._logger.error("Detail: %s" % str(e))
 
             # Make sure the client is set up and accepting connections
