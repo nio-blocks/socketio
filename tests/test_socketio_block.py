@@ -18,7 +18,7 @@ class TestSocketIO(NIOBlockTestCase):
         """Test that the block can send a signal."""
         message = 'hello_nio'
         self.configure_block(self._block, {
-            'content': message,
+            'content': '"{0}"'.format(message),
             'log_level': 'DEBUG'
         })
         self._block.start()
