@@ -3,10 +3,10 @@ from nio.common.versioning.dependency import DependsOn
 from nio.common.discovery import Discoverable, DiscoverableType
 from nio.metadata.properties.int import IntProperty
 from nio.metadata.properties.string import StringProperty
+from nio.metadata.properties.expression import ExpressionProperty
 from nio.modules.scheduler.imports import Job
 from nio.common.signal.base import Signal
 from nio.modules.threading.imports import Lock, Thread
-from nio.util import eval_signal
 
 from copy import copy
 from datetime import timedelta
@@ -159,13 +159,13 @@ class SocketIO(Block):
         host (str): location of the socket.io server.
         port (int): socket.io server port.
         room (str): socket.io room.
-        content (str): Content to send to socket.io room.
+        content (Expression): Content to send to socket.io room.
 
     """
     host = StringProperty(default="127.0.0.1")
     port = IntProperty(default=443)
     room = StringProperty(default="default")
-    content = StringProperty(default="signal.message")
+    content = ExpressionProperty(default="{{$message}}")
 
     def __init__(self):
         super().__init__()
@@ -279,7 +279,7 @@ class SocketIO(Block):
         """
         for signal in signals:
             try:
-                message = eval_signal(signal, self.content, self._logger)
+                message = self.content(signal)
             except Exception as e:
                 message = None
                 self._logger.error("Invalid content expression: %s"
