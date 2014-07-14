@@ -281,10 +281,11 @@ class SocketIO(Block):
             try:
                 message = self.content(signal)
             except Exception as e:
-                message = None
-                self._logger.error("Invalid content expression: %s"
-                                   % self.content)
-                self._logger.error("Detail: %s" % str(e))
+                self._logger.error(
+                    "Content evaluation failed: {0}: {1}".format(
+                        type(e).__name__, str(e))
+                )
+                continue
 
             # Make sure the client is set up and accepting connections
             if self._client is None or self._client.terminated:
@@ -293,9 +294,4 @@ class SocketIO(Block):
                     "terminated web socket, dropping the signal")
                 continue
 
-            if message is not None:
-                self._client.send_event('pub', message)
-            else:
-                self._logger.error(
-                    "Missing attribute [{0}] on signal".format(
-                        self.content))
+            self._client.send_event('pub', message)
