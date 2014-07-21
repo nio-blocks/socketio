@@ -162,10 +162,10 @@ class SocketIO(Block):
         content (Expression): Content to send to socket.io room.
 
     """
-    host = StringProperty(default="127.0.0.1")
-    port = IntProperty(default=443)
-    room = StringProperty(default="default")
-    content = ExpressionProperty(default="{{$message}}")
+    host = StringProperty(title='SocketIo Hose', default="127.0.0.1")
+    port = IntProperty(title='Port', default=443)
+    room = StringProperty(title='SocketIo Room', default="default")
+    content = ExpressionProperty(title='Content', default="{{$message}}")
 
     def __init__(self):
         super().__init__()
