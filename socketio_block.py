@@ -4,9 +4,9 @@ from nio.common.discovery import Discoverable, DiscoverableType
 from nio.metadata.properties.int import IntProperty
 from nio.metadata.properties.string import StringProperty
 from nio.metadata.properties.expression import ExpressionProperty
-from nio.modules.scheduler.imports import Job
+from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
-from nio.modules.threading.imports import Lock, Thread
+from nio.modules.threading import Lock, Thread
 
 from copy import copy
 from datetime import timedelta
