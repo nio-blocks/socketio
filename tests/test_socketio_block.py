@@ -1,4 +1,4 @@
-from socketio.socketio_block import SocketIO, SocketIOWebSocketClient
+from ..socketio_block import SocketIO, SocketIOWebSocketClient
 from nio.util.support.block_test_case import NIOBlockTestCase
 from nio.common.signal.base import Signal
 from unittest.mock import MagicMock, patch, ANY
