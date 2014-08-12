@@ -165,7 +165,8 @@ class SocketIO(Block):
     host = StringProperty(title='SocketIo Hose', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='SocketIo Room', default="default")
-    content = ExpressionProperty(title='Content', default="{{$message}}")
+    content = ExpressionProperty(title='Content',
+                                 default="{{json.dumps($to_dict(), default=str)}}")
 
     def __init__(self):
         super().__init__()
