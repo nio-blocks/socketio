@@ -1,3 +1,4 @@
+import json
 from ..socketio_block import SocketIO, SocketIOWebSocketClient
 from nio.util.support.block_test_case import NIOBlockTestCase
 from nio.common.signal.base import Signal
@@ -43,3 +44,11 @@ class TestSocketIO(NIOBlockTestCase):
         self._block.process_signals(signals)
         with self.assertRaises(AssertionError):
             socket_send_event.assert_called_with('pub', ANY)
+
+    def test_default_expression(self, socket_close, socket_connet, socket_send_event):
+        self.configure_block(self._block, {})
+        self._block.start()
+        
+        signal = Signal({'message': 'foobar'})
+        self._block.process_signals([signal])
+        socket_send_event.assert_called_with('pub', json.dumps(signal.to_dict(), default=str))
