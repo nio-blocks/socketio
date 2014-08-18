@@ -96,7 +96,13 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
     def _send_packet(self, code, path='', data='', id=''):
         packet_text = ":".join([str(code), id, path, data])
         self._logger.debug("Sending packet: %s" % packet_text)
-        self.send(packet_text)
+        try:
+            self.send(packet_text)
+        except Exception as e:
+            self._logger.error(
+                "Error sending packet: {0}: {1}".format(type(e).__name__,
+                                                        str(e))
+            )
 
     def _send_heartbeat(self):
         self._logger.debug("Sending heartbeat message")
