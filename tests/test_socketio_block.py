@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch, ANY
 
 class MsgSignal(Signal):
     def __init__(self, message):
+        super().__init__()
         self.message = message
 
 @patch('socketio.socketio_block.SocketIOWebSocketClient.send_event')
@@ -33,7 +34,8 @@ class TestSocketIO(NIOBlockTestCase):
 
         self._block.stop()
 
-    def test_bogus_content_expr(self, socket_close, socket_connect, socket_send_event):
+    def test_bogus_content_expr(self, socket_close, socket_connect,
+                                socket_send_event):
         self.configure_block(self._block, {
             'content': '{{dict($message)}}',
             'log_level': 'DEBUG'
@@ -45,10 +47,13 @@ class TestSocketIO(NIOBlockTestCase):
         with self.assertRaises(AssertionError):
             socket_send_event.assert_called_with('pub', ANY)
 
-    def test_default_expression(self, socket_close, socket_connet, socket_send_event):
+    def test_default_expression(self, socket_close, socket_connet,
+                                socket_send_event):
         self.configure_block(self._block, {})
         self._block.start()
         
         signal = Signal({'message': 'foobar'})
         self._block.process_signals([signal])
-        socket_send_event.assert_called_with('pub', json.dumps(signal.to_dict(), default=str))
+        socket_send_event.assert_called_with('pub',
+                                             json.dumps(signal.to_dict(),
+                                                        default=str))
