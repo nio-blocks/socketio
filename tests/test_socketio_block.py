@@ -10,9 +10,10 @@ class MsgSignal(Signal):
         super().__init__()
         self.message = message
 
-@patch('socketio.socketio_block.SocketIOWebSocketClient.send_event')
-@patch('socketio.socketio_block.SocketIOWebSocketClient.connect')
-@patch('socketio.socketio_block.SocketIOWebSocketClient.close')
+
+@patch.object(SocketIOWebSocketClient, 'send_event')
+@patch.object(SocketIOWebSocketClient, 'connect')
+@patch.object(SocketIOWebSocketClient, 'close')
 class TestSocketIO(NIOBlockTestCase):
 
     def setUp(self):
@@ -51,7 +52,7 @@ class TestSocketIO(NIOBlockTestCase):
                                 socket_send_event):
         self.configure_block(self._block, {})
         self._block.start()
-        
+
         signal = Signal({'message': 'foobar'})
         self._block.process_signals([signal])
         socket_send_event.assert_called_with('pub',
