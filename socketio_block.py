@@ -5,7 +5,7 @@ from nio.metadata.properties.string import StringProperty
 from nio.metadata.properties.expression import ExpressionProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
-from nio.modules.threading import Lock, Thread
+from nio.modules.threading import Thread
 
 from datetime import timedelta
 import json
@@ -171,8 +171,8 @@ class SocketIO(Block):
     host = StringProperty(title='SocketIo Hose', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='SocketIo Room', default="default")
-    content = ExpressionProperty(title='Content',
-                                 default="{{json.dumps($to_dict(), default=str)}}")
+    content = ExpressionProperty(
+        title='Content', default="{{json.dumps($to_dict(), default=str)}}")
 
     def __init__(self):
         super().__init__()
@@ -183,6 +183,7 @@ class SocketIO(Block):
         self._client = None
         self._socket_url_base = ""
         self._timeout = 1
+        self._connection_job = None
 
     def configure(self, context):
         super().configure(context)
@@ -202,20 +203,27 @@ class SocketIO(Block):
         """
         super().stop()
         self._logger.debug("Shutting down socket.io client")
-        self._client.close()
+
+        # Cancel any pending reconnects
+        if self._connection_job:
+            self._connection_job.cancel()
+
+        self._client.close_connection()
 
     def handle_reconnect(self):
         self._timeout = self._timeout or 1
         self._client = None
         self._logger.debug("Attempting to reconnect in {0} seconds."
                            .format(self._timeout))
-        if self._timeout <= 64:
+
+        # Make sure our timeout is not getting out of hand and that we don't
+        # have another connection job scheduled
+        if self._timeout <= 64 and self._connection_job is None:
             self._logger.debug("Attempting to reconnect")
-            Job(
+            self._connection_job = Job(
                 self._connect_to_socket,
                 timedelta(seconds=self._timeout),
-                repeatable=False
-            )
+                repeatable=False)
         else:
             self._logger.error(
                 "Failed to reconnect after unexpected close. Giving up."
@@ -240,11 +248,19 @@ class SocketIO(Block):
 
     def _connect_to_socket(self):
         try:
+            # Don't need the job any more
+            self._connection_job = None
+
             self._do_handshake()
 
             url = self._get_ws_url()
 
             self._logger.debug("Connecting to %s" % url)
+
+            # In case the client is sticking around, close it before creating a
+            # new one
+            if self._client:
+                self._client.close_connection()
 
             self._client = SocketIOWebSocketClient(
                 url, self._logger, self.room,
