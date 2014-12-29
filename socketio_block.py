@@ -189,12 +189,7 @@ class SocketIO(Block):
         super().configure(context)
         self._socket_url_base = "%s:%s/socket.io/1/" % (self.host, self.port)
 
-    def start(self):
-        """ Start the block by connecting to socket server.
-
-        """
-        super().start()
-        self._logger.debug("Starting socket.io client")
+        # Should connect now so we're ready to process signals
         self._connect_to_socket()
 
     def stop(self):
