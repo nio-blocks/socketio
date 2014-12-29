@@ -37,7 +37,7 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
         self.handle_disconnect()
 
     def handle_disconnect(self):
-        self._logger.debug("Disconnection detected")
+        self._logger.info("Disconnection detected")
         self._restart_handler()
 
     def received_message(self, m):
@@ -47,6 +47,8 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
             self._logger.warning(
                 "Received an improperly formatted message: %s" % m)
             return
+
+        self._logger.debug("Received a message: {}".format(message_parts))
 
         # Message data can come in an optional 4th section, it may have colons,
         # so join the rest of it together
