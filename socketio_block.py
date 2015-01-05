@@ -203,7 +203,7 @@ class SocketIO(Block):
         if self._connection_job:
             self._connection_job.cancel()
 
-        self._client.close_connection()
+        self._client.close()
 
     def handle_reconnect(self):
         self._timeout = self._timeout or 1
@@ -255,7 +255,7 @@ class SocketIO(Block):
             # In case the client is sticking around, close it before creating a
             # new one
             if self._client:
-                self._client.close_connection()
+                self._client.close()
 
             self._client = SocketIOWebSocketClient(
                 url, self._logger, self.room,
