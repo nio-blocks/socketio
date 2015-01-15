@@ -14,6 +14,7 @@ Properties
 -   **port**: Socket.IO server port.
 -   **room**: Socket.IO room.
 -   **content**: Content to send to room. Should be json encoded.
+-   **listen**: whether or not the block should listen to messages from the SocketIo room.
 
 
 Dependencies

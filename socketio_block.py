@@ -1,8 +1,7 @@
 from nio.common.block.base import Block
 from nio.common.discovery import Discoverable, DiscoverableType
-from nio.metadata.properties.int import IntProperty
-from nio.metadata.properties.string import StringProperty
-from nio.metadata.properties.expression import ExpressionProperty
+from nio.metadata.properties import BoolProperty, IntProperty, \
+    StringProperty, ExpressionProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
 from nio.modules.threading import Thread
@@ -166,6 +165,8 @@ class SocketIO(Block):
         port (int): socket.io server port.
         room (str): socket.io room.
         content (Expression): Content to send to socket.io room.
+        listen (bool): Whether or not the block should listen to messages
+            FROM the SocketIo room.
 
     """
     host = StringProperty(title='SocketIo Hose', default="127.0.0.1")
@@ -173,6 +174,7 @@ class SocketIO(Block):
     room = StringProperty(title='SocketIo Room', default="default")
     content = ExpressionProperty(
         title='Content', default="{{json.dumps($to_dict(), default=str)}}")
+    listen = BoolProperty(title="Listen to SocketIo Room", default=False)
 
     def __init__(self):
         super().__init__()
@@ -230,7 +232,11 @@ class SocketIO(Block):
         data will be a dictionary, *most likely* containing an event and data
         that was sent, in the form of a python object.
         """
-        if 'event' not in data or data['event'] != 'recvData':
+        if not self.listen:
+            # listening is turned off by default
+            self._logger.debug("Ignoring data from web socket")
+            return
+        elif 'event' not in data or data['event'] != 'recvData':
             # We don't care about this event, it's not data
             return
         try:
