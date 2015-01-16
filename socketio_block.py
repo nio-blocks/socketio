@@ -1,8 +1,7 @@
 from nio.common.block.base import Block
 from nio.common.discovery import Discoverable, DiscoverableType
-from nio.metadata.properties.int import IntProperty
-from nio.metadata.properties.string import StringProperty
-from nio.metadata.properties.expression import ExpressionProperty
+from nio.metadata.properties import BoolProperty, IntProperty, \
+    StringProperty, ExpressionProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
 from nio.modules.threading import Thread
@@ -16,11 +15,13 @@ from ws4py.client import WebSocketBaseClient
 
 class SocketIOWebSocketClient(WebSocketBaseClient):
 
-    def __init__(self, url, logger, room, restart_handler, data_handler):
+    def __init__(self, url, logger, room, listen,
+                 restart_handler, data_handler):
         super(SocketIOWebSocketClient, self).__init__(url, None, None)
         self._th = Thread(target=self.run, name='SocketIOWebSocketClient')
         self._logger = logger
         self._room = room
+        self._listen = listen
         self._restart_handler = restart_handler
         self._data_handler = data_handler
 
@@ -73,12 +74,14 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
             8: self._recv_noop
         }
 
-        if int(message_type) not in message_handlers:
+        msg_type = int(message_type)
+        if msg_type in range(3, 6) and not self._listen:
+            self._logger.debug("Ignoring incoming data from web socket")
+        elif msg_type not in message_handlers:
             self._logger.warning(
                 "Message type %s is not a valid message type" % message_type)
-            return
-
-        message_handlers[int(message_type)](message_data)
+        else:
+            message_handlers[int(message_type)](message_data)
 
     def send_msg(self, msg):
         self._send_packet(3, '', '', msg)
@@ -166,6 +169,8 @@ class SocketIO(Block):
         port (int): socket.io server port.
         room (str): socket.io room.
         content (Expression): Content to send to socket.io room.
+        listen (bool): Whether or not the block should listen to messages
+            FROM the SocketIo room.
 
     """
     host = StringProperty(title='SocketIo Hose', default="127.0.0.1")
@@ -173,6 +178,7 @@ class SocketIO(Block):
     room = StringProperty(title='SocketIo Room', default="default")
     content = ExpressionProperty(
         title='Content', default="{{json.dumps($to_dict(), default=str)}}")
+    listen = BoolProperty(title="Listen to SocketIo Room", default=False)
 
     def __init__(self):
         super().__init__()
@@ -258,7 +264,7 @@ class SocketIO(Block):
                 self._client.close()
 
             self._client = SocketIOWebSocketClient(
-                url, self._logger, self.room,
+                url, self._logger, self.room, self.listen,
                 self.handle_reconnect, self.handle_data)
             self._client.connect()
 
