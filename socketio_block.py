@@ -1,7 +1,7 @@
 from nio.common.block.base import Block
 from nio.common.discovery import Discoverable, DiscoverableType
 from nio.metadata.properties import BoolProperty, IntProperty, \
-    StringProperty, ExpressionProperty
+    StringProperty, ExpressionProperty, TimeDeltaProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
 from nio.modules.threading import Thread
@@ -179,6 +179,8 @@ class SocketIO(Block):
     content = ExpressionProperty(
         title='Content', default="{{json.dumps($to_dict(), default=str)}}")
     listen = BoolProperty(title="Listen to SocketIo Room", default=False)
+    max_retry = TimeDeltaProperty(
+        title="Max Retry Time", default={"seconds": 300})
 
     def __init__(self):
         super().__init__()
@@ -219,7 +221,8 @@ class SocketIO(Block):
 
         # Make sure our timeout is not getting out of hand and that we don't
         # have another connection job scheduled
-        if self._timeout <= 64 and self._connection_job is None:
+        if (self._timeout <= self.max_retry.total_seconds() and
+                self._connection_job is None):
             self._logger.debug("Attempting to reconnect")
             self._connection_job = Job(
                 self._connect_to_socket,
