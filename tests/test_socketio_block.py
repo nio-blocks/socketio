@@ -2,10 +2,12 @@ import json
 from ..socketio_block import SocketIO, SocketIOWebSocketClient
 from nio.util.support.block_test_case import NIOBlockTestCase
 from nio.common.signal.base import Signal
+from time import sleep
 from unittest.mock import MagicMock, patch, ANY
 
 
 class MsgSignal(Signal):
+
     def __init__(self, message):
         super().__init__()
         self.message = message
@@ -48,7 +50,7 @@ class TestSocketIO(NIOBlockTestCase):
         with self.assertRaises(AssertionError):
             socket_send_event.assert_called_with('pub', ANY)
 
-    def test_default_expression(self, socket_close, socket_connet,
+    def test_default_expression(self, socket_close, socket_connect,
                                 socket_send_event):
         self.configure_block(self._block, {})
         self._block.start()
@@ -58,3 +60,27 @@ class TestSocketIO(NIOBlockTestCase):
         socket_send_event.assert_called_with('pub',
                                              json.dumps(signal.to_dict(),
                                                         default=str))
+
+    def test_management_signal(self, socket_close, socket_connect,
+                               socket_send_event):
+        """ Test that on failed connections the block notifies mgmt sigs """
+
+        # Our connect method should raise an exception
+        socket_connect.side_effect = Exception("Fake Connection Failed")
+        self._block.notify_management_signal = MagicMock()
+
+        # We want to not retry more than 2 seconds
+        self.configure_block(self._block, {
+            'content': '',
+            'log_level': 'DEBUG',
+            'max_retry': {'seconds': 2}
+        })
+        self._block.start()
+
+        # Wait one second and make sure we haven't notified management signals
+        sleep(1)
+        self.assertFalse(self._block.notify_management_signal.called)
+
+        # Wait one more second and make sure we did notify the error
+        sleep(1.1)
+        self.assertTrue(self._block.notify_management_signal.called)

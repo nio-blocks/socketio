@@ -4,7 +4,9 @@ from nio.metadata.properties import BoolProperty, IntProperty, \
     StringProperty, ExpressionProperty, TimeDeltaProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
+from nio.common.signal.status import BlockStatusSignal
 from nio.modules.threading import Thread
+from nio.common.block.controller import BlockStatus
 
 from datetime import timedelta
 import json
@@ -230,8 +232,18 @@ class SocketIO(Block):
                 repeatable=False)
         else:
             self._logger.error(
-                "Failed to reconnect after unexpected close. Giving up."
-            )
+                "Failed to reconnect after unexpected close. Giving up.")
+            status_signal = BlockStatusSignal(
+                BlockStatus.error, 'Out of retries.')
+
+            # Leaving source for backwards compatibility
+            # In the future, you will know that a status signal is a block
+            # status signal when it contains service_name and name
+            #
+            # TODO: Remove when source gets added to status signals in nio
+            setattr(status_signal, 'source', 'Block')
+
+            self.notify_management_signal(status_signal)
 
     def handle_data(self, data):
         """Handle data coming from the web socket
