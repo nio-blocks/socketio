@@ -225,8 +225,8 @@ class SocketIO(Block):
 
         # Make sure our timeout is not getting out of hand
         if (self._timeout <= self.max_retry.total_seconds()):
-            self._logger.debug("Attempting to reconnect in {0} seconds."
-                               .format(self._timeout))
+            self._logger.warning("Attempting to reconnect in {0} seconds."
+                                 .format(self._timeout))
             self._connection_job = Job(
                 self._connect_to_socket,
                 timedelta(seconds=self._timeout),
