@@ -218,14 +218,15 @@ class SocketIO(Block):
     def handle_reconnect(self):
         self._timeout = self._timeout or 1
         self._client = None
-        self._logger.debug("Attempting to reconnect in {0} seconds."
-                           .format(self._timeout))
 
-        # Make sure our timeout is not getting out of hand and that we don't
-        # have another connection job scheduled
-        if (self._timeout <= self.max_retry.total_seconds() and
-                self._connection_job is None):
-            self._logger.debug("Attempting to reconnect")
+        if self._connection_job is not None:
+            self._logger.warning("Reconnection job already scheduled")
+            return
+
+        # Make sure our timeout is not getting out of hand
+        if (self._timeout <= self.max_retry.total_seconds()):
+            self._logger.debug("Attempting to reconnect in {0} seconds."
+                               .format(self._timeout))
             self._connection_job = Job(
                 self._connect_to_socket,
                 timedelta(seconds=self._timeout),

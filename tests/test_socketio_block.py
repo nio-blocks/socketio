@@ -84,3 +84,26 @@ class TestSocketIO(NIOBlockTestCase):
         # Wait one more second and make sure we did notify the error
         sleep(1.1)
         self.assertTrue(self._block.notify_management_signal.called)
+
+    def test_subsequent_reconnects(self, close, conn, send):
+        """ Tests that the reconnect handler can be called multiple times """
+
+        self._block.notify_management_signal = MagicMock()
+
+        # We want to not retry more than 2 seconds
+        self.configure_block(self._block, {
+            'content': '',
+            'log_level': 'DEBUG',
+            'max_retry': {'seconds': 20}
+        })
+        self._block.start()
+
+        # Make multiple handle reconnect calls
+        self._block.handle_reconnect()
+        self._block.handle_reconnect()
+
+        # Make sure the block did not enter error state
+        self.assertFalse(self._block.notify_management_signal.called)
+
+        # Make sure our reconnection job is scheduled
+        self.assertIsNotNone(self._block._connection_job)
