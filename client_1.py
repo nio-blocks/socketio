@@ -60,7 +60,6 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
                 "Message type %s is not a valid message type" % message_type)
             return
 
-        # TODO: Check if we are listening
         message_handlers[message_type](message_data)
 
     def send_msg(self, msg):
@@ -123,6 +122,10 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         # when we receive an event, we get a dictionary containing the event
         # name, and a list of arguments that come with it. we only care about
         # the first item in the list of arguments
+        if not self._listen:
+            self._logger.debug("Ignoring incoming data from web socket")
+            return
+
         event_data = json.loads(data)
         self._data_handler({
             'event': event_data[0],
