@@ -33,8 +33,8 @@ class SocketIOBase(Block):
     def __init__(self):
         super().__init__()
         self._sid = ""
+        self._hb_interval = -1  # Heartbeat interval
         self._hb_timeout = -1  # Heartbeat timeout
-        self._close_timeout = -1  # Close connection timeout
         self._transports = ""  # Valid transports
         self._client = None
         self._socket_url_base = ""
@@ -52,14 +52,14 @@ class SocketIOBase(Block):
         """ Stop the block by closing the client.
 
         """
-        super().stop()
         self._logger.debug("Shutting down socket.io client")
 
         # Cancel any pending reconnects
         if self._connection_job:
             self._connection_job.cancel()
-
-        self._client.close()
+        if self._client:
+            self._client.close()
+        super().stop()
 
     def handle_reconnect(self):
         self._timeout = self._timeout or 1

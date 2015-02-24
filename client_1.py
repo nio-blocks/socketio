@@ -50,6 +50,7 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
 
         # Handle the different types
         message_handlers = {
+            3: self._recv_heartbeat,
             40: self._recv_connect,
             41: self._recv_disconnect,
             42: self._recv_event
@@ -109,8 +110,7 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         self.send_event('ready', self._room)
 
     def _recv_heartbeat(self, data=None):
-        # When we get a heartbeat from the server, send one back!
-        self._send_heartbeat()
+        self._logger.debug("Heartbeat PONG received")
 
     def _recv_msg(self, data=None):
         self._data_handler(self._parse_message(data))

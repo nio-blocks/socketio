@@ -30,8 +30,11 @@ class SocketIO(SocketIOBase):
             raise Exception("Could not complete handshake: %s" %
                             handshake.text)
 
+        self._logger.debug("Parsing handshake response: {}".format(
+            handshake.text))
+
         # Assign the properties of the socket server
-        (self._sid, self._hb_timeout, self._close_timeout,
+        (self._sid, self._hb_interval, self._hb_timeout,
          self._transports) = handshake.text.split(":")
 
         self._logger.debug("Handshake successful, sid=%s" % self._sid)
