@@ -149,9 +149,7 @@ class SocketIO(Block):
             self.handle_reconnect()
 
     def process_signals(self, signals):
-        """ Send content to the socket.io room.
-
-        """
+        """ Send content to the socket.io room. """
         for signal in signals:
             try:
                 message = self.content(signal)
@@ -172,12 +170,23 @@ class SocketIO(Block):
         return self.socketio_version == SocketIOVersion.v1
 
     def _get_socket_client(self):
+        """ Get the WS client class to use
+
+        Returns:
+            class: a WebSocketClient class for the configured version of
+                socket.io
+        """
         if self._is_version_1():
             return SocketIOWebSocketClientV1
 
         return SocketIOWebSocketClient
 
     def _send_heartbeat(self):
+        """ Send a heartbeat through the socket client.
+
+        This is likely only used in version 1, version 0 sends heartbeats
+        when requested to, so the client takes care of it.
+        """
         if self._client and not self._client.terminated:
             self._client._send_heartbeat()
         else:
@@ -185,11 +194,24 @@ class SocketIO(Block):
                 "Cannot send heartbeat to non-connected socket")
 
     def _stop_heartbeats(self):
+        """ Stop any scheduled heartbeat sending job.
+
+        Most likely only in use in version 1, but safely callable
+        regardless.
+        """
         if self._heartbeat_job:
             self._heartbeat_job.cancel()
             self._heartbeat_job = None
 
     def _create_client(self, url):
+        """ Create a WS client object.
+
+        This will close any existing clients and re-create a client
+        object.
+
+        By the time this function returns, the client is connected and
+        ready to send data.
+        """
         # In case the client is sticking around, close it before creating a
         # new one
         if self._client:
@@ -199,6 +221,7 @@ class SocketIO(Block):
         # we will re-create after connecting
         self._stop_heartbeats()
 
+        # Get the right version of the socket client class and instantiate it
         self._client = self._get_socket_client()(
             url, self._logger, self.room, self.listen,
             self.handle_reconnect, self.handle_data)
@@ -220,7 +243,12 @@ class SocketIO(Block):
                 self.host, self.port)
 
     def _do_handshake(self):
-        """ To be overridden """
+        """ Perform the socket io handshake.
+
+        This function will set the proper variables like heartbeat timeout
+        and the sid. It will also make sure that websockets is a valid
+        transport for this socket.io server.
+        """
         handshake_url = self._get_handshake_url()
         self._logger.debug("Making handshake request to {}".format(
             handshake_url))
@@ -248,11 +276,11 @@ class SocketIO(Block):
             raise Exception("Websocket is not a valid transport for server")
 
     def _get_handshake_url(self):
+        """ Get the URL to perform the initial handshake request to """
         if self._is_version_1():
-            return "http://{}?transport=polling".format(
-                self._socket_url_base)
+            return "http://{}?transport=polling".format(self._socket_url_base)
 
-        return "ws://%swebsocket/%s" % (self._socket_url_base, self._sid)
+        return "http://{}".format(self._socket_url_base)
 
     def _parse_v0_response(self, resp_text):
         """ Parse a socket.io v0 handshake response. """
@@ -277,6 +305,7 @@ class SocketIO(Block):
         self._transports = resp['upgrades']
 
     def _get_ws_url(self):
+        """ Get the websocket URL to communciate with """
         if self._is_version_1():
             return "ws://{}?transport=websocket&sid={}".format(
                 self._socket_url_base, self._sid)
