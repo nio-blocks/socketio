@@ -1,16 +1,29 @@
+import requests
+import json
+import re
+from enum import Enum
 from datetime import timedelta
+from .client import SocketIOWebSocketClient
+from .client_1 import SocketIOWebSocketClientV1
+from nio.common.discovery import Discoverable, DiscoverableType
 from nio.common.block.base import Block
 from nio.metadata.properties import BoolProperty, IntProperty, \
-    StringProperty, ExpressionProperty, TimeDeltaProperty
+    StringProperty, ExpressionProperty, TimeDeltaProperty, SelectProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
 from nio.common.signal.status import BlockStatusSignal
 from nio.common.block.controller import BlockStatus
 
 
-class SocketIOBase(Block):
+class SocketIOVersion(Enum):
+    v0 = '0.9.x'
+    v1 = '1.x.x'
 
-    """ A base block for communicating with a socket.io server.
+
+@Discoverable(DiscoverableType.block)
+class SocketIO(Block):
+
+    """ A block for communicating with a socket.io server.
 
     Properties:
         host (str): location of the socket.io server.
@@ -19,6 +32,7 @@ class SocketIOBase(Block):
         content (Expression): Content to send to socket.io room.
         listen (bool): Whether or not the block should listen to messages
             FROM the SocketIo room.
+        version (enum): Which version of socketIO to use
 
     """
     host = StringProperty(title='SocketIo Host', default="127.0.0.1")
@@ -29,10 +43,13 @@ class SocketIOBase(Block):
     listen = BoolProperty(title="Listen to SocketIo Room", default=False)
     max_retry = TimeDeltaProperty(
         title="Max Retry Time", default={"seconds": 300})
+    socketio_version = SelectProperty(
+        SocketIOVersion, title='Socket.IO Version', default=SocketIOVersion.v0)
 
     def __init__(self):
         super().__init__()
         self._sid = ""
+        self._heartbeat_job = None
         self._hb_interval = -1  # Heartbeat interval
         self._hb_timeout = -1  # Heartbeat timeout
         self._transports = ""  # Valid transports
@@ -54,6 +71,8 @@ class SocketIOBase(Block):
         """
         self._logger.debug("Shutting down socket.io client")
 
+        self._stop_heartbeats()
+
         # Cancel any pending reconnects
         if self._connection_job:
             self._connection_job.cancel()
@@ -64,6 +83,8 @@ class SocketIOBase(Block):
     def handle_reconnect(self):
         self._timeout = self._timeout or 1
         self._client = None
+
+        self._stop_heartbeats()
 
         if self._connection_job is not None:
             self._logger.warning("Reconnection job already scheduled")
@@ -135,10 +156,7 @@ class SocketIOBase(Block):
             try:
                 message = self.content(signal)
             except Exception as e:
-                self._logger.error(
-                    "Content evaluation failed: {0}: {1}".format(
-                        type(e).__name__, str(e))
-                )
+                self._logger.exception("Content evaluation failed")
                 continue
 
             # Make sure the client is set up and accepting connections
@@ -150,18 +168,117 @@ class SocketIOBase(Block):
 
             self._client.send_event('pub', message)
 
+    def _is_version_1(self):
+        return self.socketio_version == SocketIOVersion.v1
+
+    def _get_socket_client(self):
+        if self._is_version_1():
+            return SocketIOWebSocketClientV1
+
+        return SocketIOWebSocketClient
+
+    def _send_heartbeat(self):
+        if self._client and not self._client.terminated:
+            self._client._send_heartbeat()
+        else:
+            self._logger.warning(
+                "Cannot send heartbeat to non-connected socket")
+
+    def _stop_heartbeats(self):
+        if self._heartbeat_job:
+            self._heartbeat_job.cancel()
+            self._heartbeat_job = None
+
     def _create_client(self, url):
-        """ To be overridden """
-        pass
+        # In case the client is sticking around, close it before creating a
+        # new one
+        if self._client:
+            self._client.close()
+
+        # If there is a pending heartbeat job, kill it
+        # we will re-create after connecting
+        self._stop_heartbeats()
+
+        self._client = self._get_socket_client()(
+            url, self._logger, self.room, self.listen,
+            self.handle_reconnect, self.handle_data)
+        self._client.connect()
+
+        # Schedule the heartbeat job only in version 1
+        if self._is_version_1():
+            self._heartbeat_job = Job(
+                self._send_heartbeat,
+                timedelta(seconds=self._hb_interval),
+                repeatable=True)
 
     def _build_socket_url_base(self):
-        """ To be overridden """
-        pass
+        if self._is_version_1():
+            self._socket_url_base = "{}:{}/socket.io/".format(
+                self.host, self.port)
+        else:
+            self._socket_url_base = "{}:{}/socket.io/1/".format(
+                self.host, self.port)
 
     def _do_handshake(self):
         """ To be overridden """
-        pass
+        handshake_url = self._get_handshake_url()
+        self._logger.debug("Making handshake request to {}".format(
+            handshake_url))
+
+        if self._is_version_1():
+            handshake = requests.get(handshake_url)
+        else:
+            handshake = requests.post(handshake_url)
+
+        if handshake.status_code != 200:
+            raise Exception("Could not complete handshake: %s" %
+                            handshake.text)
+
+        self._logger.debug("Parsing handshake response: {}".format(
+            handshake.text))
+        if self._is_version_1():
+            self._parse_v1_response(handshake.text)
+        else:
+            self._parse_v0_response(handshake.text)
+
+        self._logger.debug("Handshake successful, sid=%s" % self._sid)
+
+        # Make sure the server reports that they can handle websockets
+        if 'websocket' not in self._transports:
+            raise Exception("Websocket is not a valid transport for server")
+
+    def _get_handshake_url(self):
+        if self._is_version_1():
+            return "http://{}?transport=polling".format(
+                self._socket_url_base)
+
+        return "ws://%swebsocket/%s" % (self._socket_url_base, self._sid)
+
+    def _parse_v0_response(self, resp_text):
+        """ Parse a socket.io v0 handshake response. """
+        (self._sid, self._hb_interval, self._hb_timeout,
+         self._transports) = resp_text.split(":")
+
+    def _parse_v1_response(self, resp_text):
+        """ Parse a socket.io v1 handshake response.
+
+        Expected response should look like:
+            \0xxxx {"sid":"xxx", "upgrades":["websocket","polling",..],
+            pingInterval:xxxx, pingTimeout:xxxx}
+        """
+        self._logger.debug("Parsing handshake response: {}".format(resp_text))
+        matches = re.search('({.*})', resp_text)
+
+        resp = json.loads(matches.group(1))
+
+        self._sid = resp['sid']
+        self._hb_interval = int(resp['pingInterval']) / 1000
+        self._hb_timeout = int(resp['pingTimeout']) / 1000
+        self._transports = resp['upgrades']
 
     def _get_ws_url(self):
-        """ To be overridden """
-        pass
+        if self._is_version_1():
+            return "ws://{}?transport=websocket&sid={}".format(
+                self._socket_url_base, self._sid)
+
+        return "ws://%swebsocket/%s" % (self._socket_url_base, self._sid)

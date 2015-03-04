@@ -7,7 +7,7 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
 
     def __init__(self, url, logger, room, listen,
                  restart_handler, data_handler):
-        super(SocketIOWebSocketClient, self).__init__(url, None, None)
+        super().__init__(url, None, None)
         self._th = Thread(target=self.run, name='SocketIOWebSocketClient')
         self._logger = logger
         self._room = room
