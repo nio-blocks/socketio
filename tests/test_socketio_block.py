@@ -47,8 +47,8 @@ class TestSocketIO(NIOBlockTestCase):
 
         signals = [Signal({'message': 'foobar'})]
         self._block.process_signals(signals)
-        with self.assertRaises(AssertionError):
-            socket_send_event.assert_called_with('pub', ANY)
+
+        self.assertFalse(socket_send_event.called)
 
     def test_default_expression(self, socket_close, socket_connect,
                                 socket_send_event):
