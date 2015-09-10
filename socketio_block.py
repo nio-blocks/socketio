@@ -39,7 +39,8 @@ class SocketIO(Block):
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='SocketIo Room', default="default")
     content = ExpressionProperty(
-        title='Content', default="{{json.dumps($to_dict(), default=str)}}")
+        title='Content', default="{{json.dumps($to_dict(), default=str)}}",
+        visible=False)
     listen = BoolProperty(title="Listen to SocketIo Room", default=False)
     max_retry = TimeDeltaProperty(
         title="Max Retry Time", default={"seconds": 300})
@@ -153,7 +154,7 @@ class SocketIO(Block):
         for signal in signals:
             try:
                 message = self.content(signal)
-            except Exception as e:
+            except:
                 self._logger.exception("Content evaluation failed")
                 continue
 
