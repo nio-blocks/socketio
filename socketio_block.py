@@ -58,6 +58,7 @@ class SocketIO(Block):
         self._socket_url_base = ""
         self._timeout = 1
         self._connection_job = None
+        self._stopping = False
 
     def configure(self, context):
         super().configure(context)
@@ -70,6 +71,7 @@ class SocketIO(Block):
         """ Stop the block by closing the client.
 
         """
+        self._stopping = True
         self._logger.debug("Shutting down socket.io client")
 
         self._stop_heartbeats()
@@ -86,6 +88,10 @@ class SocketIO(Block):
         self._client = None
 
         self._stop_heartbeats()
+
+        # Don't need to reconnect if we are stopping, the close was expected
+        if self._stopping:
+            return
 
         if self._connection_job is not None:
             self._logger.warning("Reconnection job already scheduled")
@@ -151,6 +157,12 @@ class SocketIO(Block):
 
     def process_signals(self, signals):
         """ Send content to the socket.io room. """
+
+        # Don't do any processing or sending if the block is stopping.
+        # The connection may be closed and we don't want to re-open
+        if self._stopping:
+            return
+
         for signal in signals:
             try:
                 message = self.content(signal)
