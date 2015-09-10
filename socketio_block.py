@@ -44,7 +44,7 @@ class SocketIO(Block):
     max_retry = TimeDeltaProperty(
         title="Max Retry Time", default={"seconds": 300})
     socketio_version = SelectProperty(
-        SocketIOVersion, title='Socket.IO Version', default=SocketIOVersion.v0)
+        SocketIOVersion, title='Socket.IO Version', default=SocketIOVersion.v1)
 
     def __init__(self):
         super().__init__()
