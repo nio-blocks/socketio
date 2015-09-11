@@ -8,7 +8,8 @@ from .client_1 import SocketIOWebSocketClientV1
 from nio.common.discovery import Discoverable, DiscoverableType
 from nio.common.block.base import Block
 from nio.metadata.properties import BoolProperty, IntProperty, \
-    StringProperty, ExpressionProperty, TimeDeltaProperty, SelectProperty
+    StringProperty, ExpressionProperty, TimeDeltaProperty, SelectProperty, \
+    VersionProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
 from nio.common.signal.status import BlockStatusSignal
@@ -35,6 +36,7 @@ class SocketIO(Block):
         version (enum): Which version of socketIO to use
 
     """
+    version = VersionProperty('1.0.0')
     host = StringProperty(title='SocketIo Host', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='SocketIo Room', default="default")
@@ -84,9 +86,18 @@ class SocketIO(Block):
         super().stop()
 
     def handle_reconnect(self):
-        self._timeout = self._timeout or 1
-        self._client = None
+        try:
+            # Try to close the client if it's open
+            self._client.close()
+        except:
+            # If we couldn't close, it's fine. Either the client wasn't
+            # opened or it didn't want to respond. That's what we get for
+            # being nice and cleaning up our connection
+            pass
+        finally:
+            self._client = None
 
+        self._timeout = self._timeout or 1
         self._stop_heartbeats()
 
         # Don't need to reconnect if we are stopping, the close was expected
@@ -235,9 +246,7 @@ class SocketIO(Block):
         self._stop_heartbeats()
 
         # Get the right version of the socket client class and instantiate it
-        self._client = self._get_socket_client()(
-            url, self._logger, self.room, self.listen,
-            self.handle_reconnect, self.handle_data)
+        self._client = self._get_socket_client()(url, self)
         self._client.connect()
 
         # Schedule the heartbeat job only in version 1
