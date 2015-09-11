@@ -1,10 +1,16 @@
 import json
+from datetime import timedelta
+from nio.modules.scheduler import Job
 from .client import SocketIOWebSocketClient
 
 
 class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
 
     """ A client for 1.0 socket.io servers """
+
+    def __init__(self, url, block):
+        super().__init__(url, block)
+        self._heartbeat_expiry_job = None
 
     def opened(self):
         self._logger.info("Socket connection open")
@@ -51,14 +57,34 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         self._logger.debug("Sending packet: %s" % packet_text)
         try:
             self.send(packet_text)
-        except Exception as e:
-            self._logger.error(
-                "Error sending packet: {0}: {1}".format(type(e).__name__,
-                                                        str(e))
-            )
+        except:
+            self._logger.exception("Error sending packet")
+
+    def _send_heartbeat(self):
+        # Cancel any existing heartbeat expiry job
+        if self._heartbeat_expiry_job:
+            self._heartbeat_expiry_job.cancel()
+
+        # If we don't get a heartbeat pong in the configured timeout,
+        # we want to expire and re-connect.
+        # The heartbeat pong receive method will cancel this job
+        self._heartbeat_expiry_job = Job(
+            self._heartbeat_expired,
+            timedelta(seconds=self._block._hb_timeout),
+            repeatable=False)
+
+        super()._send_heartbeat()
+
+    def _heartbeat_expired(self):
+        """ Called when a heartbeat request has expired """
+        self._logger.error("No heartbeat response was received...reconnecting")
+        self._block.handle_reconnect()
 
     def _recv_heartbeat(self, data=None):
         self._logger.debug("Heartbeat PONG received")
+        # Cancel any existing heartbeat expiry job
+        if self._heartbeat_expiry_job:
+            self._heartbeat_expiry_job.cancel()
 
     def _recv_event(self, data=None):
         # when we receive an event, we get a dictionary containing the event

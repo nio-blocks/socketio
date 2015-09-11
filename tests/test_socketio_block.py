@@ -3,7 +3,7 @@ from ..socketio_block import SocketIO, SocketIOWebSocketClient
 from nio.util.support.block_test_case import NIOBlockTestCase
 from nio.common.signal.base import Signal
 from time import sleep
-from unittest.mock import MagicMock, patch, ANY
+from unittest.mock import MagicMock, patch
 
 
 class MsgSignal(Signal):
@@ -27,6 +27,7 @@ class TestSocketIO(NIOBlockTestCase):
         """Test that the block can send a signal."""
         message = 'hello_nio'
         self.configure_block(self._block, {
+            'socketio_version': 'v0',
             'content': "{{$message}}",
             'log_level': 'DEBUG'
         })
@@ -40,6 +41,7 @@ class TestSocketIO(NIOBlockTestCase):
     def test_bogus_content_expr(self, socket_close, socket_connect,
                                 socket_send_event):
         self.configure_block(self._block, {
+            'socketio_version': 'v0',
             'content': '{{dict($message)}}',
             'log_level': 'DEBUG'
         })
@@ -52,7 +54,9 @@ class TestSocketIO(NIOBlockTestCase):
 
     def test_default_expression(self, socket_close, socket_connect,
                                 socket_send_event):
-        self.configure_block(self._block, {})
+        self.configure_block(self._block, {
+            'socketio_version': 'v0'
+        })
         self._block.start()
 
         signal = Signal({'message': 'foobar'})
@@ -71,6 +75,7 @@ class TestSocketIO(NIOBlockTestCase):
 
         # We want to not retry more than 2 seconds
         self.configure_block(self._block, {
+            'socketio_version': 'v0',
             'content': '',
             'log_level': 'DEBUG',
             'max_retry': {'seconds': 2}
@@ -92,6 +97,7 @@ class TestSocketIO(NIOBlockTestCase):
 
         # We want to not retry more than 2 seconds
         self.configure_block(self._block, {
+            'socketio_version': 'v0',
             'content': '',
             'log_level': 'DEBUG',
             'max_retry': {'seconds': 20}
@@ -107,3 +113,20 @@ class TestSocketIO(NIOBlockTestCase):
 
         # Make sure our reconnection job is scheduled
         self.assertIsNotNone(self._block._connection_job)
+
+    def test_no_send_after_stop(self, close, conn, send):
+        """ Make sure signals sent after stop aren't sent """
+        self.configure_block(self._block, {
+            'socketio_version': 'v0'
+        })
+
+        # We expect one call to send when the block is started
+        self._block.start()
+        self._block.process_signals([Signal()])
+        self.assertEqual(send.call_count, 1)
+
+        # Now let's stop the block and make sure send didn't get called again
+        # even if we send signals afterwards
+        self._block.stop()
+        self._block.process_signals([Signal()])
+        self.assertEqual(send.call_count, 1)

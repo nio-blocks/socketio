@@ -5,15 +5,15 @@ from nio.modules.threading import Thread
 
 class SocketIOWebSocketClient(WebSocketBaseClient):
 
-    def __init__(self, url, logger, room, listen,
-                 restart_handler, data_handler):
+    def __init__(self, url, block):
         super().__init__(url, None, None)
         self._th = Thread(target=self.run, name='SocketIOWebSocketClient')
-        self._logger = logger
-        self._room = room
-        self._listen = listen
-        self._restart_handler = restart_handler
-        self._data_handler = data_handler
+        self._block = block
+        self._logger = block._logger
+        self._room = block.room
+        self._listen = block.listen
+        self._restart_handler = block.handle_reconnect
+        self._data_handler = block.handle_data
 
     def handshake_ok(self):
         self._th.start()
