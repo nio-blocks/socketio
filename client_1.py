@@ -61,23 +61,25 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
             self._logger.exception("Error sending packet")
 
     def _send_heartbeat(self):
-        # Cancel any existing heartbeat expiry job
         if self._heartbeat_expiry_job:
-            self._heartbeat_expiry_job.cancel()
+            self._logger.warning("Trying to send a heartbeat but haven't "
+                                 "gotten the previous PONG yet")
+        else:
+            # The heartbeat job has been cancelled, let's start a new one
+            # The heartbeat pong receive method will cancel this job
+            self._heartbeat_expiry_job = Job(
+                self._heartbeat_expired,
+                timedelta(seconds=self._block._hb_timeout),
+                repeatable=False)
 
-        # If we don't get a heartbeat pong in the configured timeout,
-        # we want to expire and re-connect.
-        # The heartbeat pong receive method will cancel this job
-        self._heartbeat_expiry_job = Job(
-            self._heartbeat_expired,
-            timedelta(seconds=self._block._hb_timeout),
-            repeatable=False)
-
+        # Send the heartbeat regardless of whether the expiry job had
+        # been cancelled yet
         super()._send_heartbeat()
 
     def _heartbeat_expired(self):
         """ Called when a heartbeat request has expired """
         self._logger.error("No heartbeat response was received...reconnecting")
+        self._heartbeat_expiry_job = None
         self._block.handle_reconnect()
 
     def _recv_heartbeat(self, data=None):
@@ -85,6 +87,7 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         # Cancel any existing heartbeat expiry job
         if self._heartbeat_expiry_job:
             self._heartbeat_expiry_job.cancel()
+        self._heartbeat_expiry_job = None
 
     def _recv_event(self, data=None):
         # when we receive an event, we get a dictionary containing the event

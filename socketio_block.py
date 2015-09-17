@@ -36,7 +36,7 @@ class SocketIO(Block):
         version (enum): Which version of socketIO to use
 
     """
-    version = VersionProperty('1.0.0')
+    version = VersionProperty('1.0.1')
     host = StringProperty(title='SocketIo Host', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='SocketIo Room', default="default")
