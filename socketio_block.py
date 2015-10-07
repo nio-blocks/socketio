@@ -86,6 +86,11 @@ class SocketIO(Block):
         super().stop()
 
     def handle_reconnect(self):
+        # Stop sending heartbeats immediately
+        # We do this here because we don't want a heartbeat going out when
+        # the client is trying to close, sometimes that can take some time
+        self._stop_heartbeats()
+
         try:
             # Try to close the client if it's open
             self._client.close()
@@ -98,7 +103,6 @@ class SocketIO(Block):
             self._client = None
 
         self._timeout = self._timeout or 1
-        self._stop_heartbeats()
 
         # Don't need to reconnect if we are stopping, the close was expected
         if self._stopping:
