@@ -81,8 +81,7 @@ class SocketIO(Block):
         # Cancel any pending reconnects
         if self._connection_job:
             self._connection_job.cancel()
-        if self._client:
-            self._client.close()
+        self._close_client()
         super().stop()
 
     def handle_reconnect(self):
@@ -91,18 +90,8 @@ class SocketIO(Block):
         # the client is trying to close, sometimes that can take some time
         self._stop_heartbeats()
 
-        try:
-            # Try to close the client if it's open
-            self._client.close()
-        except:
-            # If we couldn't close, it's fine. Either the client wasn't
-            # opened or it didn't want to respond. That's what we get for
-            # being nice and cleaning up our connection
-            pass
-        finally:
-            self._client = None
-
-        self._timeout = self._timeout or 1
+        # Now that we won't send heartbeats anymore, let's close the client
+        self._close_client()
 
         # Don't need to reconnect if we are stopping, the close was expected
         if self._stopping:
@@ -112,6 +101,7 @@ class SocketIO(Block):
             self._logger.warning("Reconnection job already scheduled")
             return
 
+        self._timeout = self._timeout or 1
         # Make sure our timeout is not getting out of hand
         if (self._timeout <= self.max_retry.total_seconds()):
             self._logger.warning("Attempting to reconnect in {0} seconds."
@@ -231,6 +221,20 @@ class SocketIO(Block):
             self._heartbeat_job.cancel()
             self._heartbeat_job = None
 
+    def _close_client(self):
+        """ Safely close the client and remove the reference """
+        try:
+            # Try to close the client if it's open
+            if self._client:
+                self._client.close()
+        except:
+            # If we couldn't close, it's fine. Either the client wasn't
+            # opened or it didn't want to respond. That's what we get for
+            # being nice and cleaning up our connection
+            self._logger.info("Error closing client", exc_info=True)
+        finally:
+            self._client = None
+
     def _create_client(self, url):
         """ Create a WS client object.
 
@@ -242,8 +246,7 @@ class SocketIO(Block):
         """
         # In case the client is sticking around, close it before creating a
         # new one
-        if self._client:
-            self._client.close()
+        self._close_client()
 
         # If there is a pending heartbeat job, kill it
         # we will re-create after connecting
