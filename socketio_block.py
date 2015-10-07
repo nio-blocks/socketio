@@ -159,15 +159,15 @@ class SocketIO(Block):
             self._do_handshake()
 
             url = self._get_ws_url()
-            self._logger.debug("Connecting to %s" % url)
+            self._logger.info("Connecting to %s" % url)
             self._create_client(url)
             self._logger.info("Connected to socket successfully")
 
             # Reset the timeout
             self._timeout = 1
-        except Exception as e:
+        except:
             self._timeout *= 2
-            self._logger.error(e)
+            self._logger.exception("Error connecting")
             self.handle_reconnect()
 
     def process_signals(self, signals):
