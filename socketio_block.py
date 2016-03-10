@@ -5,15 +5,15 @@ from enum import Enum
 from datetime import timedelta
 from .client import SocketIOWebSocketClient
 from .client_1 import SocketIOWebSocketClientV1
-from nio.common.discovery import Discoverable, DiscoverableType
-from nio.common.block.base import Block
-from nio.metadata.properties import BoolProperty, IntProperty, \
-    StringProperty, ExpressionProperty, TimeDeltaProperty, SelectProperty, \
+from nio.util.discovery import discoverable
+from nio.block.base import Block
+from nio.properties import BoolProperty, IntProperty, \
+    StringProperty, Property, TimeDeltaProperty, SelectProperty, \
     VersionProperty
 from nio.modules.scheduler import Job
-from nio.common.signal.base import Signal
-from nio.common.signal.status import BlockStatusSignal
-from nio.common.block.controller import BlockStatus
+from nio.signal.base import Signal
+from nio.signal.status import BlockStatusSignal
+from nio.util.runner import RunnerStatus
 
 
 class SocketIOVersion(Enum):
@@ -21,7 +21,7 @@ class SocketIOVersion(Enum):
     v1 = '1.x.x'
 
 
-@Discoverable(DiscoverableType.block)
+@discoverable
 class SocketIO(Block):
 
     """ A block for communicating with a socket.io server.
@@ -40,8 +40,8 @@ class SocketIO(Block):
     host = StringProperty(title='SocketIo Host', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='SocketIo Room', default="default")
-    content = ExpressionProperty(
-        title='Content', default="{{json.dumps($to_dict(), default=str)}}",
+    content = Property(
+        title='Content', default="{{ json.dumps($to_dict(), default=str) }}",
         visible=False)
     listen = BoolProperty(title="Listen to SocketIo Room", default=False)
     max_retry = TimeDeltaProperty(
@@ -74,7 +74,7 @@ class SocketIO(Block):
 
         """
         self._stopping = True
-        self._logger.debug("Shutting down socket.io client")
+        self.logger.debug("Shutting down socket.io client")
 
         self._stop_heartbeats()
 
@@ -98,23 +98,23 @@ class SocketIO(Block):
             return
 
         if self._connection_job is not None:
-            self._logger.warning("Reconnection job already scheduled")
+            self.logger.warning("Reconnection job already scheduled")
             return
 
         self._timeout = self._timeout or 1
         # Make sure our timeout is not getting out of hand
-        if (self._timeout <= self.max_retry.total_seconds()):
-            self._logger.warning("Attempting to reconnect in {0} seconds."
-                                 .format(self._timeout))
+        if (self._timeout <= self.max_retry().total_seconds()):
+            self.logger.warning("Attempting to reconnect in {0} seconds."
+                                .format(self._timeout))
             self._connection_job = Job(
                 self._connect_to_socket,
                 timedelta(seconds=self._timeout),
                 repeatable=False)
         else:
-            self._logger.error(
+            self.logger.error(
                 "Failed to reconnect after unexpected close. Giving up.")
             status_signal = BlockStatusSignal(
-                BlockStatus.error, 'Out of retries.')
+                RunnerStatus.error, 'Out of retries.')
 
             # Leaving source for backwards compatibility
             # In the future, you will know that a status signal is a block
@@ -140,7 +140,7 @@ class SocketIO(Block):
                 setattr(sig, dataKey, data['data'][dataKey])
             self.notify_signals([sig])
         except Exception as e:
-            self._logger.warning("Could not parse socket data: %s" % e)
+            self.logger.warning("Could not parse socket data: %s" % e)
 
     def _connect_to_socket(self):
         try:
@@ -149,15 +149,15 @@ class SocketIO(Block):
             self._do_handshake()
 
             url = self._get_ws_url()
-            self._logger.info("Connecting to %s" % url)
+            self.logger.info("Connecting to %s" % url)
             self._create_client(url)
-            self._logger.info("Connected to socket successfully")
+            self.logger.info("Connected to socket successfully")
 
             # Reset the timeout
             self._timeout = 1
         except:
             self._timeout *= 2
-            self._logger.exception("Error connecting")
+            self.logger.exception("Error connecting")
             self.handle_reconnect()
 
     def process_signals(self, signals):
@@ -172,12 +172,12 @@ class SocketIO(Block):
             try:
                 message = self.content(signal)
             except:
-                self._logger.exception("Content evaluation failed")
+                self.logger.exception("Content evaluation failed")
                 continue
 
             # Make sure the client is set up and accepting connections
             if self._client is None or self._client.terminated:
-                self._logger.warning(
+                self.logger.warning(
                     "Tried to send to a non-existent or "
                     "terminated web socket, dropping the signal")
                 continue
@@ -185,7 +185,7 @@ class SocketIO(Block):
             self._client.send_event('pub', message)
 
     def _is_version_1(self):
-        return self.socketio_version == SocketIOVersion.v1
+        return self.socketio_version() == SocketIOVersion.v1
 
     def _get_socket_client(self):
         """ Get the WS client class to use
@@ -208,7 +208,7 @@ class SocketIO(Block):
         if self._client and not self._client.terminated:
             self._client._send_heartbeat()
         else:
-            self._logger.warning(
+            self.logger.warning(
                 "Cannot send heartbeat to non-connected socket")
 
     def _stop_heartbeats(self):
@@ -231,7 +231,7 @@ class SocketIO(Block):
             # If we couldn't close, it's fine. Either the client wasn't
             # opened or it didn't want to respond. That's what we get for
             # being nice and cleaning up our connection
-            self._logger.info("Error closing client", exc_info=True)
+            self.logger.info("Error closing client", exc_info=True)
         finally:
             self._client = None
 
@@ -266,10 +266,10 @@ class SocketIO(Block):
     def _build_socket_url_base(self):
         if self._is_version_1():
             self._socket_url_base = "{}:{}/socket.io/".format(
-                self.host, self.port)
+                self.host(), self.port())
         else:
             self._socket_url_base = "{}:{}/socket.io/1/".format(
-                self.host, self.port)
+                self.host(), self.port())
 
     def _do_handshake(self):
         """ Perform the socket io handshake.
@@ -279,7 +279,7 @@ class SocketIO(Block):
         transport for this socket.io server.
         """
         handshake_url = self._get_handshake_url()
-        self._logger.debug("Making handshake request to {}".format(
+        self.logger.debug("Making handshake request to {}".format(
             handshake_url))
 
         if self._is_version_1():
@@ -291,14 +291,14 @@ class SocketIO(Block):
             raise Exception("Could not complete handshake: %s" %
                             handshake.text)
 
-        self._logger.debug("Parsing handshake response: {}".format(
+        self.logger.debug("Parsing handshake response: {}".format(
             handshake.text))
         if self._is_version_1():
             self._parse_v1_response(handshake.text)
         else:
             self._parse_v0_response(handshake.text)
 
-        self._logger.debug("Handshake successful, sid=%s" % self._sid)
+        self.logger.debug("Handshake successful, sid=%s" % self._sid)
 
         # Make sure the server reports that they can handle websockets
         if 'websocket' not in self._transports:
@@ -323,7 +323,7 @@ class SocketIO(Block):
             \0xxxx {"sid":"xxx", "upgrades":["websocket","polling",..],
             pingInterval:xxxx, pingTimeout:xxxx}
         """
-        self._logger.debug("Parsing handshake response: {}".format(resp_text))
+        self.logger.debug("Parsing handshake response: {}".format(resp_text))
         matches = re.search('({.*})', resp_text)
 
         resp = json.loads(matches.group(1))

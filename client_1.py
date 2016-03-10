@@ -13,7 +13,7 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         self._heartbeat_expiry_job = None
 
     def opened(self):
-        self._logger.info("Socket connection open")
+        self.logger.info("Socket connection open")
         # Send a connection request
         self._send_packet(52)
 
@@ -22,13 +22,13 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         try:
             message_type = int(str(m)[:2])
         except ValueError:
-            self._logger.warning(
+            self.logger.warning(
                 "Received an improperly formatted message: %s" % m)
             return
 
         message_data = str(m)[2:]
 
-        self._logger.debug("Received a message: {}".format(message_data))
+        self.logger.debug("Received a message: {}".format(message_data))
 
         # Handle the different types
         message_handlers = {
@@ -39,7 +39,7 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         }
 
         if message_type not in message_handlers:
-            self._logger.warning(
+            self.logger.warning(
                 "Message type %s is not a valid message type" % message_type)
             return
 
@@ -54,16 +54,16 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         else:
             packet_text = "{}".format(code)
 
-        self._logger.debug("Sending packet: %s" % packet_text)
+        self.logger.debug("Sending packet: %s" % packet_text)
         try:
             self.send(packet_text)
         except:
-            self._logger.exception("Error sending packet")
+            self.logger.exception("Error sending packet")
 
     def _send_heartbeat(self):
         if self._heartbeat_expiry_job:
-            self._logger.warning("Trying to send a heartbeat but haven't "
-                                 "gotten the previous PONG yet")
+            self.logger.warning("Trying to send a heartbeat but haven't "
+                                "gotten the previous PONG yet")
         else:
             # The heartbeat job has been cancelled, let's start a new one
             # The heartbeat pong receive method will cancel this job
@@ -78,12 +78,12 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
 
     def _heartbeat_expired(self):
         """ Called when a heartbeat request has expired """
-        self._logger.error("No heartbeat response was received...reconnecting")
+        self.logger.error("No heartbeat response was received...reconnecting")
         self._heartbeat_expiry_job = None
         self._block.handle_reconnect()
 
     def _recv_heartbeat(self, data=None):
-        self._logger.debug("Heartbeat PONG received")
+        self.logger.debug("Heartbeat PONG received")
         # Cancel any existing heartbeat expiry job
         if self._heartbeat_expiry_job:
             self._heartbeat_expiry_job.cancel()
@@ -94,7 +94,7 @@ class SocketIOWebSocketClientV1(SocketIOWebSocketClient):
         # name, and a list of arguments that come with it. we only care about
         # the first item in the list of arguments
         if not self._listen:
-            self._logger.debug("Ignoring incoming data from web socket")
+            self.logger.debug("Ignoring incoming data from web socket")
             return
 
         event_data = json.loads(data)

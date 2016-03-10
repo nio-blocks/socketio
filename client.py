@@ -1,6 +1,6 @@
 import json
 from ws4py.client import WebSocketBaseClient
-from nio.modules.threading import Thread
+from threading import Thread
 
 
 class SocketIOWebSocketClient(WebSocketBaseClient):
@@ -9,9 +9,9 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
         super().__init__(url, None, None)
         self._th = Thread(target=self.run, name='SocketIOWebSocketClient')
         self._block = block
-        self._logger = block._logger
-        self._room = block.room
-        self._listen = block.listen
+        self.logger = block.logger
+        self._room = block.room()
+        self._listen = block.listen()
         self._restart_handler = block.handle_reconnect
         self._data_handler = block.handle_data
 
@@ -20,26 +20,26 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
         self._th.join(timeout=1.0)
 
     def opened(self):
-        self._logger.info("Socket connection open")
+        self.logger.info("Socket connection open")
 
     def closed(self, code, reason=None):
-        self._logger.info(
+        self.logger.info(
             "Socket connection closed {0}:{1}".format(code, reason))
         self.handle_disconnect()
 
     def handle_disconnect(self):
-        self._logger.info("Disconnection detected")
+        self.logger.info("Disconnection detected")
         self._restart_handler()
 
     def received_message(self, m):
         message_parts = str(m).split(":")
 
         if len(message_parts) < 3:
-            self._logger.warning(
+            self.logger.warning(
                 "Received an improperly formatted message: %s" % m)
             return
 
-        self._logger.debug("Received a message: {}".format(message_parts))
+        self.logger.debug("Received a message: {}".format(message_parts))
 
         # Message data can come in an optional 4th section, it may have colons,
         # so join the rest of it together
@@ -66,9 +66,9 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
 
         msg_type = int(message_type)
         if msg_type in range(3, 6) and not self._listen:
-            self._logger.debug("Ignoring incoming data from web socket")
+            self.logger.debug("Ignoring incoming data from web socket")
         elif msg_type not in message_handlers:
-            self._logger.warning(
+            self.logger.warning(
                 "Message type %s is not a valid message type" % message_type)
         else:
             message_handlers[int(message_type)](message_data)
@@ -88,17 +88,17 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
 
     def _send_packet(self, code, path='', data='', id=''):
         packet_text = ":".join([str(code), id, path, data])
-        self._logger.debug("Sending packet: %s" % packet_text)
+        self.logger.debug("Sending packet: %s" % packet_text)
         try:
             self.send(packet_text)
         except Exception as e:
-            self._logger.error(
+            self.logger.error(
                 "Error sending packet: {0}: {1}".format(type(e).__name__,
                                                         str(e))
             )
 
     def _send_heartbeat(self):
-        self._logger.debug("Sending heartbeat message")
+        self.logger.debug("Sending heartbeat message")
         self._send_packet(2)
 
     def _parse_message(self, message):
@@ -114,9 +114,9 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
         self.handle_disconnect()
 
     def _recv_connect(self, data=None):
-        self._logger.info("Socket.io connection confirmed")
+        self.logger.info("Socket.io connection confirmed")
 
-        self._logger.debug("Joining room %s" % self._room)
+        self.logger.debug("Joining room %s" % self._room)
         self.send_event('ready', self._room)
 
     def _recv_heartbeat(self, data=None):
