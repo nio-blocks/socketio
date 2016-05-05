@@ -5,11 +5,11 @@ from enum import Enum
 from datetime import timedelta
 from .client import SocketIOWebSocketClient
 from .client_1 import SocketIOWebSocketClientV1
+from .retry.retry import Retry
 from nio.common.discovery import Discoverable, DiscoverableType
 from nio.common.block.base import Block
 from nio.metadata.properties import BoolProperty, IntProperty, \
-    StringProperty, ExpressionProperty, TimeDeltaProperty, SelectProperty, \
-    VersionProperty
+    StringProperty, ExpressionProperty, SelectProperty, VersionProperty
 from nio.modules.scheduler import Job
 from nio.common.signal.base import Signal
 from nio.common.signal.status import BlockStatusSignal
@@ -22,7 +22,7 @@ class SocketIOVersion(Enum):
 
 
 @Discoverable(DiscoverableType.block)
-class SocketIO(Block):
+class SocketIO(Retry, Block):
 
     """ A block for communicating with a socket.io server.
 
@@ -36,7 +36,7 @@ class SocketIO(Block):
         version (enum): Which version of socketIO to use
 
     """
-    version = VersionProperty('1.0.1')
+    version = VersionProperty('1.1.0')
     host = StringProperty(title='SocketIo Host', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='SocketIo Room', default="default")
@@ -44,8 +44,6 @@ class SocketIO(Block):
         title='Content', default="{{json.dumps($to_dict(), default=str)}}",
         visible=False)
     listen = BoolProperty(title="Listen to SocketIo Room", default=False)
-    max_retry = TimeDeltaProperty(
-        title="Max Retry Time", default={"seconds": 300})
     socketio_version = SelectProperty(
         SocketIOVersion, title='Socket.IO Version', default=SocketIOVersion.v1)
 
@@ -58,8 +56,6 @@ class SocketIO(Block):
         self._transports = ""  # Valid transports
         self._client = None
         self._socket_url_base = ""
-        self._timeout = 1
-        self._connection_job = None
         self._stopping = False
 
     def configure(self, context):
@@ -77,10 +73,6 @@ class SocketIO(Block):
         self._logger.debug("Shutting down socket.io client")
 
         self._stop_heartbeats()
-
-        # Cancel any pending reconnects
-        if self._connection_job:
-            self._connection_job.cancel()
         self._close_client()
         super().stop()
 
@@ -97,22 +89,11 @@ class SocketIO(Block):
         if self._stopping:
             return
 
-        if self._connection_job is not None:
-            self._logger.warning("Reconnection job already scheduled")
-            return
+        try:
+            self.execute_with_retry(self._connect_to_socket)
+        except:
+            self._logger.exception("Failed to reconnect - giving up")
 
-        self._timeout = self._timeout or 1
-        # Make sure our timeout is not getting out of hand
-        if (self._timeout <= self.max_retry.total_seconds()):
-            self._logger.warning("Attempting to reconnect in {0} seconds."
-                                 .format(self._timeout))
-            self._connection_job = Job(
-                self._connect_to_socket,
-                timedelta(seconds=self._timeout),
-                repeatable=False)
-        else:
-            self._logger.error(
-                "Failed to reconnect after unexpected close. Giving up.")
             status_signal = BlockStatusSignal(
                 BlockStatus.error, 'Out of retries.')
 
@@ -143,22 +124,12 @@ class SocketIO(Block):
             self._logger.warning("Could not parse socket data: %s" % e)
 
     def _connect_to_socket(self):
-        try:
-            # Don't need the job any more
-            self._connection_job = None
-            self._do_handshake()
+        self._do_handshake()
 
-            url = self._get_ws_url()
-            self._logger.info("Connecting to %s" % url)
-            self._create_client(url)
-            self._logger.info("Connected to socket successfully")
-
-            # Reset the timeout
-            self._timeout = 1
-        except:
-            self._timeout *= 2
-            self._logger.exception("Error connecting")
-            self.handle_reconnect()
+        url = self._get_ws_url()
+        self._logger.info("Connecting to %s" % url)
+        self._create_client(url)
+        self._logger.info("Connected to socket successfully")
 
     def process_signals(self, signals):
         """ Send content to the socket.io room. """
