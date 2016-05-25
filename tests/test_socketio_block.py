@@ -2,15 +2,7 @@ import json
 from ..socketio_block import SocketIO, SocketIOWebSocketClient
 from nio.testing.block_test_case import NIOBlockTestCase
 from nio.signal.base import Signal
-from time import sleep
 from unittest.mock import MagicMock, patch
-
-
-class MsgSignal(Signal):
-
-    def __init__(self, message):
-        super().__init__()
-        self.message = message
 
 
 @patch.object(SocketIOWebSocketClient, 'send_event')
@@ -32,7 +24,7 @@ class TestSocketIO(NIOBlockTestCase):
             'log_level': 'DEBUG'
         })
         self._block.start()
-        self._block.process_signals([MsgSignal(message)])
+        self._block.process_signals([Signal({"message": message})])
 
         socket_send_event.assert_called_once_with('pub', message)
 
@@ -61,16 +53,15 @@ class TestSocketIO(NIOBlockTestCase):
 
         signal = Signal({'message': 'foobar'})
         self._block.process_signals([signal])
-        socket_send_event.assert_called_with('pub',
-                                             json.dumps(signal.to_dict(),
-                                                        default=str))
+        socket_send_event.assert_called_with(
+            'pub', json.dumps(signal.to_dict(), default=str))
 
     def test_management_signal(self, socket_close, socket_connect,
                                socket_send_event):
         """ Test that on failed connections the block notifies mgmt sigs """
 
-        # Our connect method should raise an exception
-        socket_connect.side_effect = Exception("Fake Connection Failed")
+        # Our connect method should connect first, then raise an exception
+        socket_connect.side_effect = [True, Exception, Exception, Exception]
         self._block.notify_management_signal = MagicMock()
 
         # We want to not retry more than 2 seconds
@@ -78,16 +69,14 @@ class TestSocketIO(NIOBlockTestCase):
             'socketio_version': 'v0',
             'content': '',
             'log_level': 'DEBUG',
-            'max_retry': {'seconds': 2}
+            'retry_options': {'max_retry': 1}
         })
         self._block.start()
-
-        # Wait one second and make sure we haven't notified management signals
-        sleep(1)
-        self.assertFalse(self._block.notify_management_signal.called)
-
-        # Wait one more second and make sure we did notify the error
-        sleep(1.1)
+        # Force a reconnection that will retry once, then notify a management
+        # signal
+        self._block.handle_reconnect()
+        # Should have an initial connection, a failed reconnect, then a retry
+        self.assertEqual(socket_connect.call_count, 3)
         self.assertTrue(self._block.notify_management_signal.called)
 
     def test_subsequent_reconnects(self, close, conn, send):
@@ -99,8 +88,7 @@ class TestSocketIO(NIOBlockTestCase):
         self.configure_block(self._block, {
             'socketio_version': 'v0',
             'content': '',
-            'log_level': 'DEBUG',
-            'max_retry': {'seconds': 20}
+            'log_level': 'DEBUG'
         })
         self._block.start()
 
@@ -110,9 +98,6 @@ class TestSocketIO(NIOBlockTestCase):
 
         # Make sure the block did not enter error state
         self.assertFalse(self._block.notify_management_signal.called)
-
-        # Make sure our reconnection job is scheduled
-        self.assertIsNotNone(self._block._connection_job)
 
     def test_no_send_after_stop(self, close, conn, send):
         """ Make sure signals sent after stop aren't sent """
