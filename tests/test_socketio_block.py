@@ -2,7 +2,6 @@ import json
 from ..socketio_block import SocketIO, SocketIOWebSocketClient
 from nio.util.support.block_test_case import NIOBlockTestCase
 from nio.common.signal.base import Signal
-from time import sleep
 from unittest.mock import MagicMock, patch
 
 
@@ -70,7 +69,7 @@ class TestSocketIO(NIOBlockTestCase):
         """ Test that on failed connections the block notifies mgmt sigs """
 
         # Our connect method should raise an exception
-        socket_connect.side_effect = Exception("Fake Connection Failed")
+        socket_connect.side_effect = [True, Exception, Exception, Exception]
         self._block.notify_management_signal = MagicMock()
 
         # We want to not retry more than 2 seconds
@@ -78,16 +77,13 @@ class TestSocketIO(NIOBlockTestCase):
             'socketio_version': 'v0',
             'content': '',
             'log_level': 'DEBUG',
-            'max_retry': {'seconds': 2}
+            'retry_options': {'max_retry': 1}
         })
         self._block.start()
-
-        # Wait one second and make sure we haven't notified management signals
-        sleep(1)
-        self.assertFalse(self._block.notify_management_signal.called)
-
-        # Wait one more second and make sure we did notify the error
-        sleep(1.1)
+        # Force a reconnection
+        self._block.handle_reconnect()
+        # Should have an initial connection, a failed reconnect, then a retry
+        self.assertEqual(socket_connect.call_count, 3)
         self.assertTrue(self._block.notify_management_signal.called)
 
     def test_subsequent_reconnects(self, close, conn, send):
@@ -99,8 +95,7 @@ class TestSocketIO(NIOBlockTestCase):
         self.configure_block(self._block, {
             'socketio_version': 'v0',
             'content': '',
-            'log_level': 'DEBUG',
-            'max_retry': {'seconds': 20}
+            'log_level': 'DEBUG'
         })
         self._block.start()
 
@@ -110,9 +105,6 @@ class TestSocketIO(NIOBlockTestCase):
 
         # Make sure the block did not enter error state
         self.assertFalse(self._block.notify_management_signal.called)
-
-        # Make sure our reconnection job is scheduled
-        self.assertIsNotNone(self._block._connection_job)
 
     def test_no_send_after_stop(self, close, conn, send):
         """ Make sure signals sent after stop aren't sent """
