@@ -77,14 +77,6 @@ class SocketIO(Retry, Block):
         super().stop()
 
     def handle_reconnect(self):
-        # Stop sending heartbeats immediately
-        # We do this here because we don't want a heartbeat going out when
-        # the client is trying to close, sometimes that can take some time
-        self._stop_heartbeats()
-
-        # Now that we won't send heartbeats anymore, let's close the client
-        self._close_client()
-
         # Don't need to reconnect if we are stopping, the close was expected
         if self._stopping:
             return
@@ -215,13 +207,13 @@ class SocketIO(Retry, Block):
         By the time this function returns, the client is connected and
         ready to send data.
         """
-        # In case the client is sticking around, close it before creating a
-        # new one
-        self._close_client()
-
         # If there is a pending heartbeat job, kill it
         # we will re-create after connecting
         self._stop_heartbeats()
+
+        # In case the client is sticking around, close it before creating a
+        # new one
+        self._close_client()
 
         # Get the right version of the socket client class and instantiate it
         self._client = self._get_socket_client()(url, self)
