@@ -57,6 +57,7 @@ class SocketIO(Retry, Block):
         self._client = None
         self._socket_url_base = ""
         self._stopping = False
+        self._reconnecting = False
 
     def configure(self, context):
         super().configure(context)
@@ -84,6 +85,14 @@ class SocketIO(Retry, Block):
         if self._stopping:
             return
 
+        if self._reconnecting:
+            self._logger.warning(
+                "Already handling a reconnection, ignoring this one")
+            return
+
+        # Let other threads know that we are reconnecting right now
+        self._reconnecting = True
+
         try:
             self.execute_with_retry(self._connect_to_socket)
         except:
@@ -91,6 +100,9 @@ class SocketIO(Retry, Block):
             status_signal = BlockStatusSignal(
                 RunnerStatus.error, 'Out of retries.', block_name=self.name())
             self.notify_management_signal(status_signal)
+        finally:
+            # We made it! We're not reconnecting anymore
+            self._reconnecting = False
 
     def handle_data(self, data):
         """Handle data coming from the web socket
