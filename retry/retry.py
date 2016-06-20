@@ -129,6 +129,7 @@ class Retry(object):
                     # let the strategy do any waiting, then execute any
                     # pre-work before looping and executing the method again
                     self._backoff_strategy.wait_for_retry()
+                    self._logger.info("Retrying method execution")
                     self.before_retry(*args, **kwargs)
 
     def use_backoff_strategy(self, strategy, *args, **kwargs):

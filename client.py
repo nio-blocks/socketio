@@ -29,7 +29,10 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
 
     def handle_disconnect(self):
         self._logger.info("Disconnection detected")
-        self._restart_handler()
+        # Force the block to reconnect
+        # We need to do this because during internet outages the connection
+        # method can hang indefinitely, this force will override that
+        self._restart_handler(force_reconnect=True)
 
     def received_message(self, m):
         message_parts = str(m).split(":")

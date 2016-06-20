@@ -77,12 +77,12 @@ class SocketIO(Retry, Block):
         self._close_client()
         super().stop()
 
-    def handle_reconnect(self):
+    def handle_reconnect(self, force_reconnect=False):
         # Don't need to reconnect if we are stopping, the close was expected
         if self._stopping:
             return
 
-        if self._reconnecting:
+        if self._reconnecting and not force_reconnect:
             self._logger.warning(
                 "Already handling a reconnection, ignoring this one")
             return
@@ -91,6 +91,7 @@ class SocketIO(Retry, Block):
         self._reconnecting = True
 
         try:
+            self._logger.info("Attempting to reconnect to the socket")
             self.execute_with_retry(self._connect_to_socket)
         except:
             self._logger.exception("Failed to reconnect - giving up")
