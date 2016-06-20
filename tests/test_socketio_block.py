@@ -122,6 +122,25 @@ class TestSocketIO(NIOBlockTestCase):
             sleep(2)
             self.assertEqual(client_mock.call_count, 1)
 
+    def test_force_simultaneous_reconnects(self, close, conn, send):
+        """ Tests that we can force a simultaneous reconnect """
+        def sleep_a_while():
+            sleep(1)
+        # We will simulate our "connecting" by sleeping for a bit
+        with patch.object(self._block, '_connect_to_socket',
+                          side_effect=sleep_a_while) as client_mock:
+            # In case multiple threads try to handle a reconnection, we
+            # want the second reconnect attempt to force the reconnection
+            # to happen, even though another one is already happening
+            spawn(self._block.handle_reconnect, force_reconnect=True)
+            spawn(self._block.handle_reconnect, force_reconnect=True)
+
+            # Give the handlers some time to happen (we are sleeping instead
+            # of connecting)
+            sleep(2)
+            # This time we want to make sure it was called twice
+            self.assertEqual(client_mock.call_count, 2)
+
     def test_subsequent_reconnects(self, close, conn, send):
         """ Tests that the reconnect handler can be called multiple times """
         self._block.notify_management_signal = MagicMock()
