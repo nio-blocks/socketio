@@ -1,24 +1,17 @@
 import requests
 import json
 import re
-from enum import Enum
 from datetime import timedelta
 from .client import SocketIOWebSocketClient
-from .client_1 import SocketIOWebSocketClientV1
 from nio.util.discovery import discoverable
 from nio.block.base import Block
 from nio.block.mixins.retry.retry import Retry
 from nio.properties import BoolProperty, IntProperty, \
-    StringProperty, Property, SelectProperty, VersionProperty
+    StringProperty, Property, VersionProperty
 from nio.modules.scheduler import Job
 from nio.signal.base import Signal
 from nio.signal.status import BlockStatusSignal
 from nio.util.runner import RunnerStatus
-
-
-class SocketIOVersion(Enum):
-    v0 = '0.9.x'
-    v1 = '1.x.x'
 
 
 @discoverable
@@ -36,16 +29,14 @@ class SocketIO(Retry, Block):
         version (enum): Which version of socketIO to use
 
     """
-    version = VersionProperty('0.1.0')
-    host = StringProperty(title='SocketIo Host', default="127.0.0.1")
+    version = VersionProperty('0.2.0')
+    host = StringProperty(title='Socket.io Host', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
-    room = StringProperty(title='SocketIo Room', default="default")
+    room = StringProperty(title='Socket.io Room', default="default")
     content = Property(
         title='Content', default="{{ json.dumps($to_dict(), default=str) }}",
         visible=False)
-    listen = BoolProperty(title="Listen to SocketIo Room", default=False)
-    socketio_version = SelectProperty(
-        SocketIOVersion, title='Socket.IO Version', default=SocketIOVersion.v1)
+    listen = BoolProperty(title="Listen to Socket.io room?", default=False)
 
     def __init__(self):
         super().__init__()
@@ -107,19 +98,17 @@ class SocketIO(Retry, Block):
     def handle_data(self, data):
         """Handle data coming from the web socket
 
-        data will be a dictionary, *most likely* containing an event and data
-        that was sent, in the form of a python object.
+        data will be a dictionary, containing an event and data
+        that was sent, in the form of a python dictionary.
         """
-        if 'event' not in data or data['event'] != 'recvData':
+        if data.get('event', '') != 'recvData':
             # We don't care about this event, it's not data
             return
         try:
-            sig = Signal()
-            for dataKey in data['data']:
-                setattr(sig, dataKey, data['data'][dataKey])
+            sig = Signal(data['data'])
             self.notify_signals([sig])
-        except Exception as e:
-            self.logger.warning("Could not parse socket data: %s" % e)
+        except:
+            self.logger.warning("Could not parse socket data", exc_info=True)
 
     def _connect_to_socket(self):
         self._do_handshake()
@@ -153,9 +142,6 @@ class SocketIO(Retry, Block):
 
             self._client.send_event('pub', message)
 
-    def _is_version_1(self):
-        return self.socketio_version() == SocketIOVersion.v1
-
     def _get_socket_client(self):
         """ Get the WS client class to use
 
@@ -163,9 +149,6 @@ class SocketIO(Retry, Block):
             class: a WebSocketClient class for the configured version of
                 socket.io
         """
-        if self._is_version_1():
-            return SocketIOWebSocketClientV1
-
         return SocketIOWebSocketClient
 
     def _send_heartbeat(self):
@@ -226,19 +209,20 @@ class SocketIO(Retry, Block):
         self._client.connect()
 
         # Schedule the heartbeat job only in version 1
-        if self._is_version_1():
-            self._heartbeat_job = Job(
-                self._send_heartbeat,
-                timedelta(seconds=self._hb_interval),
-                repeatable=True)
+        self._heartbeat_job = Job(
+            self._send_heartbeat,
+            timedelta(seconds=self._hb_interval),
+            repeatable=True)
 
     def _build_socket_url_base(self):
-        if self._is_version_1():
-            self._socket_url_base = "{}:{}/socket.io/".format(
-                self.host(), self.port())
-        else:
-            self._socket_url_base = "{}:{}/socket.io/1/".format(
-                self.host(), self.port())
+        host = self.host()
+        # See if they included an http or https in front of the host,
+        # if not, default to http
+        host_matched = re.match('^https?://', host)
+        if not host_matched:
+            host = "http://{}".format(host)
+
+        self._socket_url_base = "{}:{}/socket.io/".format(host, self.port())
 
     def _do_handshake(self):
         """ Perform the socket io handshake.
@@ -251,10 +235,7 @@ class SocketIO(Retry, Block):
         self.logger.debug("Making handshake request to {}".format(
             handshake_url))
 
-        if self._is_version_1():
-            handshake = requests.get(handshake_url)
-        else:
-            handshake = requests.post(handshake_url)
+        handshake = requests.get(handshake_url)
 
         if handshake.status_code != 200:
             raise Exception("Could not complete handshake: %s" %
@@ -262,10 +243,7 @@ class SocketIO(Retry, Block):
 
         self.logger.debug("Parsing handshake response: {}".format(
             handshake.text))
-        if self._is_version_1():
-            self._parse_v1_response(handshake.text)
-        else:
-            self._parse_v0_response(handshake.text)
+        self._parse_handshake_response(handshake.text)
 
         self.logger.debug("Handshake successful, sid=%s" % self._sid)
 
@@ -275,17 +253,9 @@ class SocketIO(Retry, Block):
 
     def _get_handshake_url(self):
         """ Get the URL to perform the initial handshake request to """
-        if self._is_version_1():
-            return "http://{}?transport=polling".format(self._socket_url_base)
+        return "http://{}?transport=polling".format(self._socket_url_base)
 
-        return "http://{}".format(self._socket_url_base)
-
-    def _parse_v0_response(self, resp_text):
-        """ Parse a socket.io v0 handshake response. """
-        (self._sid, self._hb_interval, self._hb_timeout,
-         self._transports) = resp_text.split(":")
-
-    def _parse_v1_response(self, resp_text):
+    def _parse_handshake_response(self, resp_text):
         """ Parse a socket.io v1 handshake response.
 
         Expected response should look like:
@@ -304,8 +274,5 @@ class SocketIO(Retry, Block):
 
     def _get_ws_url(self):
         """ Get the websocket URL to communciate with """
-        if self._is_version_1():
-            return "ws://{}?transport=websocket&sid={}".format(
-                self._socket_url_base, self._sid)
-
-        return "ws://%swebsocket/%s" % (self._socket_url_base, self._sid)
+        return "ws://{}?transport=websocket&sid={}".format(
+            self._socket_url_base, self._sid)
