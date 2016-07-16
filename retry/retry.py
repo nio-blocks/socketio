@@ -114,7 +114,8 @@ class Retry(object):
             except Exception as exc:
                 self._logger.warning(
                     "Retryable execution on method {} failed".format(
-                        execute_method_name, exc_info=True))
+                        execute_method_name),
+                    exc_info=True)
                 self._backoff_strategy.request_failed(exc)
                 should_retry = self._backoff_strategy.should_retry()
                 if not should_retry:
