@@ -39,7 +39,7 @@ class SocketIO(Retry, Block):
     connect_timeout = TimeDeltaProperty(
         title="Connect timeout",
         default={"seconds": 10},
-        visble=False)
+        visible=False)
 
     def __init__(self):
         super().__init__()
