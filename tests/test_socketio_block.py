@@ -7,13 +7,6 @@ from nio.modules.threading import spawn
 from unittest.mock import MagicMock, patch
 
 
-class MsgSignal(Signal):
-
-    def __init__(self, message):
-        super().__init__()
-        self.message = message
-
-
 @patch.object(SocketIOWebSocketClient, 'send_event')
 @patch.object(SocketIOWebSocketClient, 'connect')
 @patch.object(SocketIOWebSocketClient, 'close')
@@ -33,7 +26,7 @@ class TestSocketIO(NIOBlockTestCase):
             'log_level': 'DEBUG'
         })
         self._block.start()
-        self._block.process_signals([MsgSignal(message)])
+        self._block.process_signals([Signal({"message": message})])
 
         socket_send_event.assert_called_once_with('pub', message)
 
@@ -62,9 +55,8 @@ class TestSocketIO(NIOBlockTestCase):
 
         signal = Signal({'message': 'foobar'})
         self._block.process_signals([signal])
-        socket_send_event.assert_called_with('pub',
-                                             json.dumps(signal.to_dict(),
-                                                        default=str))
+        socket_send_event.assert_called_with(
+            'pub', json.dumps(signal.to_dict(), default=str))
 
     def test_management_signal(self, socket_close, socket_connect,
                                socket_send_event):
