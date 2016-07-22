@@ -4,7 +4,6 @@ import json
 class PacketSender(object):
 
     def __init__(self, client, logger):
-        super().__init__()
         self._client = client
         self.logger = logger
 
@@ -21,7 +20,7 @@ class PacketSender(object):
         self.logger.debug("Sending heartbeat message")
         self.send_packet(2)
 
-    def send_packet(self, code, path='', data='', id=''):
+    def send_packet(self, code, path='', data=''):
         if path or data:
             packet_text = "{}{}".format(code, json.dumps([path, data]))
         else:

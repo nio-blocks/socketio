@@ -6,6 +6,12 @@ class PacketReceiver(object):
     def __init__(self, client, logger):
         self._client = client
         self.logger = logger
+        self._message_handlers = {
+            3: self._recv_heartbeat,
+            40: self._recv_connect,
+            41: self._recv_disconnect,
+            42: self._recv_event
+        }
 
     def handle_message(self, m):
         """ Handle an incoming message from a socket.io server """
@@ -22,19 +28,13 @@ class PacketReceiver(object):
         self.logger.debug("Received a message: {}".format(message_data))
 
         # Handle the different types
-        message_handlers = {
-            3: self._recv_heartbeat,
-            40: self._recv_connect,
-            41: self._recv_disconnect,
-            42: self._recv_event
-        }
 
-        if message_type not in message_handlers:
+        if message_type not in self._message_handlers:
             self.logger.warning(
                 "Message type %s is not a valid message type" % message_type)
             return
 
-        message_handlers[message_type](message_data)
+        self._message_handlers[message_type](message_data)
 
     def _parse_message(self, message):
         """parses a message, if it can"""
