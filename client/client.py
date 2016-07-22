@@ -13,7 +13,10 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
         super().__init__(url, None, None)
 
         # A thread to run the client in
+        # We want a daemon thread so that we don't stick around if it's the
+        # only thing left
         self._th = Thread(target=self.run, name='SocketIOWebSocketClient')
+        self._th.daemon = True
 
         # A packet sender that will send data to the socket
         self.sender = PacketSender(
@@ -48,7 +51,6 @@ class SocketIOWebSocketClient(WebSocketBaseClient):
         """
         self.logger.info("Handshake successful")
         self._th.start()
-        self._th.join(timeout=1.0)
 
     def opened(self):
         """ Called when the connection is opened """
