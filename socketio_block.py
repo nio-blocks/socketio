@@ -1,19 +1,18 @@
 import requests
 import json
 import re
-from .client.client import SocketIOWebSocketClient
-from .retry.retry import Retry
 from threading import Event, BoundedSemaphore
-from nio.common.discovery import Discoverable, DiscoverableType
-from nio.common.block.base import Block
-from nio.metadata.properties import BoolProperty, IntProperty, \
-    StringProperty, ExpressionProperty, VersionProperty, TimeDeltaProperty
-from nio.common.signal.base import Signal
-from nio.common.signal.status import BlockStatusSignal
-from nio.common.block.controller import BlockStatus
+from .client.client import SocketIOWebSocketClient
+from nio.block.mixins.retry.retry import Retry
+from nio import Block, Signal
+from nio.util.discovery import discoverable
+from nio.properties import BoolProperty, IntProperty, StringProperty, \
+    Property, VersionProperty, TimeDeltaProperty
+from nio.signal.status import BlockStatusSignal
+from nio.util.runner import RunnerStatus
 
 
-@Discoverable(DiscoverableType.block)
+@discoverable
 class SocketIO(Retry, Block):
 
     """ A block for communicating with a socket.io server.
@@ -25,14 +24,13 @@ class SocketIO(Retry, Block):
         content (Expression): Content to send to socket.io room.
         listen (bool): Whether or not the block should listen to messages
             FROM the SocketIo room.
-        version (enum): Which version of socketIO to use
 
     """
     version = VersionProperty('2.0.0')
     host = StringProperty(title='SocketIo Host', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
     room = StringProperty(title='Socket.io Room', default="default")
-    content = ExpressionProperty(
+    content = Property(
         title='Content', default="{{ json.dumps($to_dict(), default=str) }}",
         visible=False)
     listen = BoolProperty(title="Listen to SocketIo Room", default=False)
@@ -58,8 +56,6 @@ class SocketIO(Retry, Block):
 
     def configure(self, context):
         super().configure(context)
-        # For nio 2 compatibility
-        self.logger = self._logger
         self._build_socket_url_base()
         # Connect to the socket before starting the block
         # This connection won't happen with a retry, so if the socket
@@ -85,13 +81,13 @@ class SocketIO(Retry, Block):
             return
 
         try:
-            self._logger.info("Attempting to reconnect to the socket")
+            self.logger.info("Attempting to reconnect to the socket")
             self.execute_with_retry(self.reconnect_client)
         except:
-            self._logger.exception("Failed to reconnect - giving up")
+            self.logger.exception("Failed to reconnect - giving up")
 
             status_signal = BlockStatusSignal(
-                BlockStatus.error, 'Out of retries.')
+                RunnerStatus.error, 'Out of retries.')
 
             # Leaving source for backwards compatibility
             # In the future, you will know that a status signal is a block
@@ -103,16 +99,16 @@ class SocketIO(Retry, Block):
     def reconnect_client(self):
         # Only allow one connection at a time by wrapping this call in a
         # bounded semaphore
-        self._logger.debug("Acquiring connection semaphore")
+        self.logger.debug("Acquiring connection semaphore")
         if not self._connection_semaphore.acquire(blocking=False):
-            self._logger.warning("Already reconnecting, ignoring request")
+            self.logger.warning("Already reconnecting, ignoring request")
             return
-        self._logger.debug("Connection semaphore acquired")
+        self.logger.debug("Connection semaphore acquired")
         try:
             self._close_client()
             self._connect_to_socket()
         finally:
-            self._logger.debug("Releasing connection semaphore")
+            self.logger.debug("Releasing connection semaphore")
             self._connection_semaphore.release()
 
     def handle_data(self, data):
@@ -135,13 +131,13 @@ class SocketIO(Retry, Block):
         self._do_handshake()
 
         url = self._get_ws_url()
-        self._logger.info("Connecting to %s" % url)
+        self.logger.info("Connecting to %s" % url)
         self._create_client(url, connected)
-        self._logger.info("Connected to socket successfully")
+        self.logger.info("Connected to socket successfully")
 
         # Give the client some time to report that it's connected,
         # don't return from this method until that happens
-        if not connected.wait(self.connect_timeout.total_seconds()):
+        if not connected.wait(self.connect_timeout().total_seconds()):
             self.logger.warning("Connect response not received in time")
             self._close_client()
             raise Exception("Did not connect in time")
@@ -165,11 +161,9 @@ class SocketIO(Retry, Block):
         for signal in signals:
             try:
                 message = self.content(signal)
+                self._client.sender.send_event('pub', message)
             except:
-                self.logger.exception("Content evaluation failed")
-                continue
-
-            self._client.sender.send_event('pub', message)
+                self.logger.exception("Could not send message")
 
     def _close_client(self):
         """ Safely close the client and remove the reference """
@@ -198,14 +192,14 @@ class SocketIO(Retry, Block):
         """
         # We will only want to handle incoming data if the block
         # has been configured to do so
-        if self.listen:
+        if self.listen():
             data_callback = self.handle_data
         else:
             data_callback = None
 
         self._client = SocketIOWebSocketClient(
             url=url,
-            room=self.room,
+            room=self.room(),
             connect_event=connected_event,
             heartbeat_interval=self._hb_interval,
             heartbeat_timeout=self._hb_timeout,
@@ -216,7 +210,7 @@ class SocketIO(Retry, Block):
         self._client.connect()
 
     def _build_socket_url_base(self):
-        host = self.host
+        host = self.host()
         # Default to http protocol
         # See if they included an http or https in front of the host,
         host_matched = re.match('^(https?)://(.*)$', host)
@@ -224,7 +218,7 @@ class SocketIO(Retry, Block):
             self._socket_url_protocol = host_matched.group(1)
             host = host_matched.group(2)
 
-        self._socket_url_base = "{}:{}/socket.io/".format(host, self.port)
+        self._socket_url_base = "{}:{}/socket.io/".format(host, self.port())
 
     def _do_handshake(self):
         """ Perform the socket io handshake.
