@@ -4,6 +4,7 @@ from ..socketio_block import SocketIO, SocketIOWebSocketClient
 from nio import Signal
 from nio.block.terminals import DEFAULT_TERMINAL
 from nio.testing import NIOBlockTestCase
+from nio.util.runner import RunnerStatus
 
 
 class TestSocketIOBlock(NIOBlockTestCase):
@@ -154,6 +155,43 @@ class TestSocketIOBlock(NIOBlockTestCase):
             blk.stop()
             self.assertEqual(mock_close.call_count, 2)
             self.assertFalse(blk._client_ready)
+
+    def test_block_error_status(self):
+        """ Test that the block goes into error status if it can't connect """
+        blk = SocketIO()
+        # Don't do handshakes or create the client
+        blk._do_handshake = MagicMock()
+
+        with patch.object(SocketIOWebSocketClient, 'connect') as mock_conn, \
+             patch.object(Event, 'wait') as mock_wait:
+            # Simulate the connection event happening properly and in time
+            mock_wait.return_value = True
+
+            # Configure the block to retry twice then give up
+            self.configure_block(blk, {
+                "content": "{{ $attr }}",
+                "retry_options": {
+                    "max_retry": 2,
+                    "multiplier": 0.005  # retry quickly
+                }
+            })
+            # The block will still connect on configure, we want to test
+            # that it disconnects and gives up after it is running
+            self.assertEqual(mock_conn.call_count, 1)
+            self.assertTrue(blk._client_ready)
+
+            # Our reconnections will raise ConnectionError
+            blk.reconnect_client = MagicMock(side_effect=ConnectionError())
+            # Let's simulate a reconnection happening
+            blk.handle_disconnect()
+
+            # We should have seen 3 calls to our connection method, one
+            # original call and 2 retries
+            self.assertEqual(blk.reconnect_client.call_count, 3)
+            # Additionally, we should have notified 1 management signal
+            # and put our block into error when we gave up retrying
+            self.assert_block_status(blk, RunnerStatus.error)
+            self.assert_num_mgmt_signals_notified(1)
 
     def test_sends_data(self):
         """ Test that the block sends incoming signals to the client """
