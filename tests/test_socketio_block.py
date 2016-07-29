@@ -1,165 +1,253 @@
-from time import sleep
-import json
-from ..socketio_block import SocketIO, SocketIOWebSocketClient
-from nio.util.support.block_test_case import NIOBlockTestCase
-from nio.common.signal.base import Signal
-from nio.modules.threading import spawn
 from unittest.mock import MagicMock, patch
+from threading import Event
+from ..socketio_block import SocketIO, SocketIOWebSocketClient
+from nio import Signal
+from nio.block.terminals import DEFAULT_TERMINAL
+from nio.testing import NIOBlockTestCase
 
 
-@patch.object(SocketIOWebSocketClient, 'send_event')
-@patch.object(SocketIOWebSocketClient, 'connect')
-@patch.object(SocketIOWebSocketClient, 'close')
-class TestSocketIO(NIOBlockTestCase):
+class TestSocketIOBlock(NIOBlockTestCase):
 
-    def setUp(self):
-        super().setUp()
-        self._block = SocketIO()
-        self._block._do_handshake = MagicMock()
+    def test_configure_creates_and_connects(self):
+        """ Test that we create and connect to a client when configuring """
+        blk = SocketIO()
+        blk._do_handshake = MagicMock()
 
-    def test_send(self, socket_close, socket_connect, socket_send_event):
-        """Test that the block can send a signal."""
-        message = 'hello_nio'
-        self.configure_block(self._block, {
-            'socketio_version': 'v0',
-            'content': "{{$message}}",
-            'log_level': 'DEBUG'
+        client_class = "{}.{}".format(
+            blk.__module__, 'SocketIOWebSocketClient')
+        with patch(client_class) as mock_client, \
+             patch.object(Event, 'wait') as mock_event_wait:
+            # Simulate the connection event returning in time
+            mock_event_wait.return_value = True
+            blk._sid = "samplesid"
+            self.configure_block(blk, {
+                "host": "samplehost",
+                "port": 1234,
+                "room": "myroom",
+                "listen": True
+            })
+            client_creation_kwargs = mock_client.call_args[1]
+            self.assertEqual(
+                client_creation_kwargs["url"],
+                "ws://samplehost:1234/socket.io/" +
+                "?transport=websocket&sid=samplesid")
+            self.assertEqual(
+                client_creation_kwargs["room"], "myroom")
+            # Since we want to listen, our data callback should be the block's
+            # handle_data method
+            self.assertEqual(
+                client_creation_kwargs["data_callback"], blk.handle_data)
+            self.assertTrue(blk._client_ready)
+
+    def test_configure_creates_and_connects_no_listen(self):
+        """ Test that we create and connect to a client without listening """
+        blk = SocketIO()
+        blk._do_handshake = MagicMock()
+
+        client_class = "{}.{}".format(
+            blk.__module__, 'SocketIOWebSocketClient')
+        with patch(client_class) as mock_client, \
+             patch.object(Event, 'wait') as mock_event_wait:
+            # Simulate the connection event returning in time
+            mock_event_wait.return_value = True
+            blk._sid = "samplesid"
+            self.configure_block(blk, {
+                "host": "samplehost",
+                "port": 1234,
+                "room": "myroom",
+                "listen": False
+            })
+            client_creation_kwargs = mock_client.call_args[1]
+            self.assertEqual(
+                client_creation_kwargs["url"],
+                "ws://samplehost:1234/socket.io/" +
+                "?transport=websocket&sid=samplesid")
+            self.assertEqual(
+                client_creation_kwargs["room"], "myroom")
+            # Since we don't want to listne, our data callback should be None
+            self.assertIsNone(client_creation_kwargs["data_callback"])
+            self.assertTrue(blk._client_ready)
+
+    def test_handshake(self):
+        """ Test that the block performs a handshake properly """
+        blk = SocketIO()
+        # Don't actually connect
+        blk._connect_to_socket = MagicMock()
+        self.configure_block(blk, {
+            "host": "samplehost",
+            "port": 1234
         })
-        self._block.start()
-        self._block.process_signals([Signal({"message": message})])
+        with patch("requests.get") as mock_request:
+            mock_request.return_value.status_code = 200
+            # Sample response text from socket.io
+            mock_request.return_value.text = '\0xxxx {"sid":"mysid", ' + \
+                '"upgrades":["websocket","polling"], "pingInterval":5000, ' + \
+                '"pingTimeout":30000}'
+            blk._do_handshake()
 
-        socket_send_event.assert_called_once_with('pub', message)
+            # Test the block made the correct socket.io handshake request
+            mock_request.assert_called_once_with(
+                "http://samplehost:1234/socket.io/?transport=polling")
 
-        self._block.stop()
+            # Make sure the block parsed the response string properly
+            self.assertEqual(blk._sid, "mysid")
+            self.assertEqual(blk._hb_interval, 5)
+            self.assertEqual(blk._hb_timeout, 30)
+            self.assertEqual(blk._transports, ["websocket", "polling"])
 
-    def test_bogus_content_expr(self, socket_close, socket_connect,
-                                socket_send_event):
-        self.configure_block(self._block, {
-            'socketio_version': 'v0',
-            'content': '{{dict($message)}}',
-            'log_level': 'DEBUG'
+    def test_configure_timeout(self):
+        """ Test that we clean up and raise exception if we don't connect """
+        blk = SocketIO()
+        blk._do_handshake = MagicMock()
+        blk._close_client = MagicMock()
+
+        client_class = "{}.{}".format(
+            blk.__module__, 'SocketIOWebSocketClient')
+        with patch(client_class), \
+             patch.object(Event, 'wait') as mock_event_wait:
+            # Simulate the connection event timing out
+            mock_event_wait.return_value = False
+            with self.assertRaises(Exception):
+                self.configure_block(blk, {
+                    "host": "samplehost",
+                    "port": 1234,
+                    "room": "myroom",
+                    "listen": False
+                })
+            blk._close_client.assert_called_once_with()
+            self.assertFalse(blk._client_ready)
+
+    def test_connection_sequence(self):
+        """ Test that the block opens/closes the client at the right time"""
+        blk = SocketIO()
+        # Don't do handshakes or create the client
+        blk._do_handshake = MagicMock()
+
+        with patch.object(SocketIOWebSocketClient, 'connect') as mock_conn, \
+             patch.object(SocketIOWebSocketClient, 'close') as mock_close, \
+             patch.object(Event, 'wait') as mock_wait:
+            # Simulate the connection event happening properly and in time
+            mock_wait.return_value = True
+
+            # The client should be ready and connected after configuring
+            self.configure_block(blk, {
+                "content": "{{ $attr }}"
+            })
+            self.assertEqual(mock_conn.call_count, 1)
+            self.assertTrue(blk._client_ready)
+
+            # Starting the block shouldn't call connect again but we should
+            # still be ready
+            blk.start()
+            self.assertEqual(mock_conn.call_count, 1)
+            self.assertTrue(blk._client_ready)
+
+            # Let's simulate a reconnection happening
+            # We should have a close call and another connect call
+            blk.handle_disconnect()
+            self.assertEqual(mock_close.call_count, 1)
+            self.assertEqual(mock_conn.call_count, 2)
+            self.assertTrue(blk._client_ready)
+
+            # Stopping the block should make another close call and make
+            # us not ready
+            blk.stop()
+            self.assertEqual(mock_close.call_count, 2)
+            self.assertFalse(blk._client_ready)
+
+    def test_sends_data(self):
+        """ Test that the block sends incoming signals to the client """
+        blk = SocketIO()
+        # Don't actually connect
+        blk._connect_to_socket = MagicMock()
+        self.configure_block(blk, {
+            "content": "{{ $attr }}"
         })
-        self._block.start()
+        # We'll use our own client and pretend that it's ready
+        blk._client = MagicMock()
+        blk._client_ready = True
 
-        signals = [Signal({'message': 'foobar'})]
-        self._block.process_signals(signals)
+        blk.process_signals([Signal({"attr": "val"})])
+        # We will send a "pub" event with the result of the evaluation
+        # of the content our block was configured with
+        blk._client.sender.send_event.assert_called_once_with("pub", "val")
 
-        self.assertFalse(socket_send_event.called)
-
-    def test_default_expression(self, socket_close, socket_connect,
-                                socket_send_event):
-        self.configure_block(self._block, {
-            'socketio_version': 'v0'
+    def test_doesnt_send_when_not_connected(self):
+        """ Test that the block doesn't send if it's not connected """
+        blk = SocketIO()
+        # Don't actually connect
+        blk._connect_to_socket = MagicMock()
+        self.configure_block(blk, {
+            "content": "{{ $attr }}"
         })
-        self._block.start()
+        # We'll use our own client and pretend that it's not ready
+        blk._client = MagicMock()
+        blk._client_ready = False
+        blk.process_signals([Signal({"attr": "val"})])
+        # It shouldn't be called because we said the client wasn't ready
+        blk._client.sender.send_event.assert_not_called()
 
-        signal = Signal({'message': 'foobar'})
-        self._block.process_signals([signal])
-        socket_send_event.assert_called_with(
-            'pub', json.dumps(signal.to_dict(), default=str))
-
-    def test_management_signal(self, socket_close, socket_connect,
-                               socket_send_event):
-        """ Test that on failed connections the block notifies mgmt sigs """
-
-        # Our connect method should raise an exception
-        socket_connect.side_effect = [True, Exception, Exception, Exception]
-        self._block.notify_management_signal = MagicMock()
-
-        # We want to not retry more than 2 seconds
-        self.configure_block(self._block, {
-            'socketio_version': 'v0',
-            'content': '',
-            'log_level': 'DEBUG',
-            'retry_options': {'max_retry': 1}
+    def test_doesnt_send_bad_data(self):
+        """ Test that the block doesn't send anything that it can't eval """
+        blk = SocketIO()
+        # Don't actually connect
+        blk._connect_to_socket = MagicMock()
+        self.configure_block(blk, {
+            "content": "{{ $attr }}"
         })
-        self._block.start()
-        # Force a reconnection
-        self._block.handle_reconnect()
-        # Should have an initial connection, a failed reconnect, then a retry
-        self.assertEqual(socket_connect.call_count, 3)
-        self.assertTrue(self._block.notify_management_signal.called)
+        # We'll use our own client and pretend that it's ready
+        blk._client = MagicMock()
+        blk._client_ready = True
 
-    def test_no_send_after_stop(self, close, conn, send):
-        """ Make sure signals sent after stop aren't sent """
-        self.configure_block(self._block, {
-            'socketio_version': 'v0'
+        # This time, use a bad attribute that the block won't look for
+        blk.process_signals([Signal({"a bad attribute": "val"})])
+        # We will send a "pub" event with the result of the evaluation
+        # of the content our block was configured with
+        blk._client.sender.send_event.assert_not_called()
+
+    def test_receives_data(self):
+        """ Test that our block can receive socket data and notify it """
+        blk = SocketIO()
+        # Don't actually connect
+        blk._connect_to_socket = MagicMock()
+        self.configure_block(blk, {
+            "listen": True
         })
+        blk.start()
+        # Simulate the client sending us some data
+        blk.handle_data({
+            "event": "recvData",  # the server uses the recvData event type
+            "data": {
+                "attr1": "val1"
+            }
+        })
+        self.assert_num_signals_notified(1)
+        last_sig = self.last_notified[DEFAULT_TERMINAL][-1]
+        self.assertEqual(last_sig.attr1, "val1")
 
-        # We expect one call to send when the block is started
-        self._block.start()
-        self._block.process_signals([Signal()])
-        self.assertEqual(send.call_count, 1)
+    def test_receives_bad_data(self):
+        """ Test that we don't notify data we can't parse """
+        blk = SocketIO()
+        # Don't actually connect
+        blk._connect_to_socket = MagicMock()
+        self.configure_block(blk, {
+            "listen": True
+        })
+        blk.start()
+        # Simulate the client sending us some unparseable data
+        blk.handle_data({
+            "event": "recvData",  # the server uses the recvData event type
+            "data": "can't make me a signal!"
+        })
+        # Simulate the client sending us an unknown event
+        blk.handle_data({
+            "event": "what am I?",  # this is not the correct event type
+            "data": {}
+        })
+        self.assert_num_signals_notified(0)
 
-        # Now let's stop the block and make sure send didn't get called again
-        # even if we send signals afterwards
-        self._block.stop()
-        self._block.process_signals([Signal()])
-        self.assertEqual(send.call_count, 1)
-
-    def test_simultaneous_reconnects(self, close, conn, send):
-        """ Tests that only one reconnect occurs at a time """
-        def sleep_a_while():
-            sleep(1)
-        # We will simulate our "connecting" by sleeping for a bit
-        with patch.object(self._block, '_connect_to_socket',
-                          side_effect=sleep_a_while) as client_mock:
-            # In case multiple threads try to handle a reconnection, we
-            # want to make sure that the reconnect is only handled once
-            spawn(self._block.handle_reconnect)
-            spawn(self._block.handle_reconnect)
-
-            # Give the handlers some time to happen (we are sleeping instead
-            # of connecting)
-            sleep(2)
-            self.assertEqual(client_mock.call_count, 1)
-
-    def test_force_simultaneous_reconnects(self, close, conn, send):
-        """ Tests that we can force a simultaneous reconnect """
-        def sleep_a_while():
-            sleep(1)
-        # We will simulate our "connecting" by sleeping for a bit
-        with patch.object(self._block, '_connect_to_socket',
-                          side_effect=sleep_a_while) as client_mock:
-            # In case multiple threads try to handle a reconnection, we
-            # want the second reconnect attempt to force the reconnection
-            # to happen, even though another one is already happening
-            spawn(self._block.handle_reconnect, force_reconnect=True)
-            spawn(self._block.handle_reconnect, force_reconnect=True)
-
-            # Give the handlers some time to happen (we are sleeping instead
-            # of connecting)
-            sleep(2)
-            # This time we want to make sure it was called twice
-            self.assertEqual(client_mock.call_count, 2)
-
-    def test_subsequent_reconnects(self, close, conn, send):
-        """ Tests that the reconnect handler can be called multiple times """
-        self._block.notify_management_signal = MagicMock()
-
-        def sleep_a_while():
-            sleep(0.5)
-        # We will simulate our "connecting" by sleeping for a bit
-        with patch.object(self._block, '_connect_to_socket',
-                          side_effect=sleep_a_while) as client_mock:
-            # Configure the block inside of the patch, this will cause
-            # our connection method to be called once, that is ok.
-            self.configure_block(self._block, {})
-
-            # In this example, we want a different thread to issue the
-            # reconnect but then succeed. Then, we'll make sure another thread
-            # can call reconnect again and it will work (i.e. it won't
-            # continue to block the other thread if the previous reconnect
-            # is done)
-            spawn(self._block.handle_reconnect)
-            # Give reconnect attempt number 1 time to finish
-            sleep(1)
-            spawn(self._block.handle_reconnect)
-            # Give reconnect attempt number 2 time to finish
-            sleep(1)
-            # We should have tried connecting twice for reconnects and once
-            # for the initial configuration of the block
-            self.assertEqual(client_mock.call_count, 3)
-
-        # Make sure the block did not enter error state
-        self.assertFalse(self._block.notify_management_signal.called)
+    def get_logging_config(self):
+        """ Let's use INFO log level """
+        parent_log = super().get_logging_config()
+        parent_log['handlers']['default']['level'] = 'INFO'
+        return parent_log
