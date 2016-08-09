@@ -1,9 +1,9 @@
 from time import sleep
 import json
 from ..socketio_block import SocketIO, SocketIOWebSocketClient
-from nio.testing.block_test_case import NIOBlockTestCase
-from nio.signal.base import Signal
-from nio.util.threading import spawn
+from nio.util.support.block_test_case import NIOBlockTestCase
+from nio.common.signal.base import Signal
+from nio.modules.threading import spawn
 from unittest.mock import MagicMock, patch
 
 
@@ -62,7 +62,7 @@ class TestSocketIO(NIOBlockTestCase):
                                socket_send_event):
         """ Test that on failed connections the block notifies mgmt sigs """
 
-        # Our connect method should connect first, then raise an exception
+        # Our connect method should raise an exception
         socket_connect.side_effect = [True, Exception, Exception, Exception]
         self._block.notify_management_signal = MagicMock()
 
@@ -74,8 +74,7 @@ class TestSocketIO(NIOBlockTestCase):
             'retry_options': {'max_retry': 1}
         })
         self._block.start()
-        # Force a reconnection that will retry once, then notify a management
-        # signal
+        # Force a reconnection
         self._block.handle_reconnect()
         # Should have an initial connection, a failed reconnect, then a retry
         self.assertEqual(socket_connect.call_count, 3)
@@ -114,6 +113,25 @@ class TestSocketIO(NIOBlockTestCase):
             # of connecting)
             sleep(2)
             self.assertEqual(client_mock.call_count, 1)
+
+    def test_force_simultaneous_reconnects(self, close, conn, send):
+        """ Tests that we can force a simultaneous reconnect """
+        def sleep_a_while():
+            sleep(1)
+        # We will simulate our "connecting" by sleeping for a bit
+        with patch.object(self._block, '_connect_to_socket',
+                          side_effect=sleep_a_while) as client_mock:
+            # In case multiple threads try to handle a reconnection, we
+            # want the second reconnect attempt to force the reconnection
+            # to happen, even though another one is already happening
+            spawn(self._block.handle_reconnect, force_reconnect=True)
+            spawn(self._block.handle_reconnect, force_reconnect=True)
+
+            # Give the handlers some time to happen (we are sleeping instead
+            # of connecting)
+            sleep(2)
+            # This time we want to make sure it was called twice
+            self.assertEqual(client_mock.call_count, 2)
 
     def test_subsequent_reconnects(self, close, conn, send):
         """ Tests that the reconnect handler can be called multiple times """

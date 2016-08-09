@@ -1,24 +1,15 @@
 import requests
 import json
 import re
-from enum import Enum
-from datetime import timedelta
-from .client import SocketIOWebSocketClient
-from .client_1 import SocketIOWebSocketClientV1
-from nio.util.discovery import discoverable
-from nio.block.base import Block
+from threading import Event, BoundedSemaphore
+from .client.client import SocketIOWebSocketClient
 from nio.block.mixins.retry.retry import Retry
-from nio.properties import BoolProperty, IntProperty, \
-    StringProperty, Property, SelectProperty, VersionProperty
-from nio.modules.scheduler import Job
-from nio.signal.base import Signal
+from nio import Block, Signal
+from nio.util.discovery import discoverable
+from nio.properties import BoolProperty, IntProperty, StringProperty, \
+    Property, VersionProperty, TimeDeltaProperty
 from nio.signal.status import BlockStatusSignal
 from nio.util.runner import RunnerStatus
-
-
-class SocketIOVersion(Enum):
-    v0 = '0.9.x'
-    v1 = '1.x.x'
 
 
 @discoverable
@@ -33,31 +24,35 @@ class SocketIO(Retry, Block):
         content (Expression): Content to send to socket.io room.
         listen (bool): Whether or not the block should listen to messages
             FROM the SocketIo room.
-        version (enum): Which version of socketIO to use
 
     """
-    version = VersionProperty('0.1.0')
+    version = VersionProperty('2.0.0')
     host = StringProperty(title='SocketIo Host', default="127.0.0.1")
     port = IntProperty(title='Port', default=443)
-    room = StringProperty(title='SocketIo Room', default="default")
+    room = StringProperty(title='Socket.io Room', default="default")
     content = Property(
         title='Content', default="{{ json.dumps($to_dict(), default=str) }}",
         visible=False)
     listen = BoolProperty(title="Listen to SocketIo Room", default=False)
-    socketio_version = SelectProperty(
-        SocketIOVersion, title='Socket.IO Version', default=SocketIOVersion.v1)
+    connect_timeout = TimeDeltaProperty(
+        title="Connect timeout",
+        default={"seconds": 10},
+        visible=False)
 
     def __init__(self):
         super().__init__()
         self._sid = ""
-        self._heartbeat_job = None
         self._hb_interval = -1  # Heartbeat interval
         self._hb_timeout = -1  # Heartbeat timeout
         self._transports = ""  # Valid transports
         self._client = None
+        self._client_ready = False
+        # This bounded semaphore will ensure that only one thread can be
+        # connecting to the client at a time
+        self._connection_semaphore = BoundedSemaphore(1)
+        self._socket_url_protocol = "http"
         self._socket_url_base = ""
         self._stopping = False
-        self._reconnecting = False
 
     def configure(self, context):
         super().configure(context)
@@ -66,7 +61,8 @@ class SocketIO(Retry, Block):
         # This connection won't happen with a retry, so if the socket
         # server is not running, the connection will fail and the service
         # will not start.
-        self._connect_to_socket()
+        with self._connection_semaphore:
+            self._connect_to_socket()
 
     def stop(self):
         """ Stop the block by closing the client.
@@ -75,59 +71,78 @@ class SocketIO(Retry, Block):
         self._stopping = True
         self.logger.debug("Shutting down socket.io client")
 
-        self._stop_heartbeats()
-
         self._close_client()
         super().stop()
 
-    def handle_reconnect(self):
+    def handle_disconnect(self):
+        """ What to do when the client reports a problem """
         # Don't need to reconnect if we are stopping, the close was expected
         if self._stopping:
             return
 
-        if self._reconnecting:
-            self._logger.warning(
-                "Already handling a reconnection, ignoring this one")
-            return
-
-        # Let other threads know that we are reconnecting right now
-        self._reconnecting = True
-
         try:
-            self.execute_with_retry(self._connect_to_socket)
+            self.logger.info("Attempting to reconnect to the socket")
+            self.execute_with_retry(self.reconnect_client)
         except:
-            self.logger.exception("Failed to reconnect to socket - giving up.")
+            self.logger.exception("Failed to reconnect - giving up")
+
             status_signal = BlockStatusSignal(
-                RunnerStatus.error, 'Out of retries.', block_name=self.name())
-            self.notify_management_signal(status_signal)
+                RunnerStatus.error, 'Out of retries.')
+
+            # Leaving source for backwards compatibility
+            # In the future, you will know that a status signal is a block
+            # status signal when it contains service_name and name
+            #
+            # TODO: Remove when source gets added to status signals in nio
+            setattr(status_signal, 'source', 'Block')
+
+    def reconnect_client(self):
+        # Only allow one connection at a time by wrapping this call in a
+        # bounded semaphore
+        self.logger.debug("Acquiring connection semaphore")
+        if not self._connection_semaphore.acquire(blocking=False):
+            self.logger.warning("Already reconnecting, ignoring request")
+            return
+        self.logger.debug("Connection semaphore acquired")
+        try:
+            self._close_client()
+            self._connect_to_socket()
         finally:
-            # We made it! We're not reconnecting anymore
-            self._reconnecting = False
+            self.logger.debug("Releasing connection semaphore")
+            self._connection_semaphore.release()
 
     def handle_data(self, data):
         """Handle data coming from the web socket
 
-        data will be a dictionary, *most likely* containing an event and data
-        that was sent, in the form of a python object.
+        data will be a dictionary, containing an event and data
+        that was sent, in the form of a python dictionary.
         """
-        if 'event' not in data or data['event'] != 'recvData':
+        if data.get('event', '') != 'recvData':
             # We don't care about this event, it's not data
             return
         try:
-            sig = Signal()
-            for dataKey in data['data']:
-                setattr(sig, dataKey, data['data'][dataKey])
+            sig = Signal(data['data'])
             self.notify_signals([sig])
-        except Exception as e:
-            self.logger.warning("Could not parse socket data: %s" % e)
+        except:
+            self.logger.warning("Could not parse socket data", exc_info=True)
 
     def _connect_to_socket(self):
+        connected = Event()
         self._do_handshake()
 
         url = self._get_ws_url()
         self.logger.info("Connecting to %s" % url)
-        self._create_client(url)
+        self._create_client(url, connected)
         self.logger.info("Connected to socket successfully")
+
+        # Give the client some time to report that it's connected,
+        # don't return from this method until that happens
+        if not connected.wait(self.connect_timeout().total_seconds()):
+            self.logger.warning("Connect response not received in time")
+            self._close_client()
+            raise Exception("Did not connect in time")
+        else:
+            self._client_ready = True
 
     def process_signals(self, signals):
         """ Send content to the socket.io room. """
@@ -137,62 +152,24 @@ class SocketIO(Retry, Block):
         if self._stopping:
             return
 
+        if not self._client or not self._client_ready:
+            # self.logger.warning(
+                # "Tried to send to a non-existent or "
+                # "terminated web socket, dropping signals")
+            return
+
         for signal in signals:
             try:
                 message = self.content(signal)
+                self._client.sender.send_event('pub', message)
             except:
-                self.logger.exception("Content evaluation failed")
-                continue
-
-            # Make sure the client is set up and accepting connections
-            if self._client is None or self._client.terminated:
-                self.logger.warning(
-                    "Tried to send to a non-existent or "
-                    "terminated web socket, dropping the signal")
-                continue
-
-            self._client.send_event('pub', message)
-
-    def _is_version_1(self):
-        return self.socketio_version() == SocketIOVersion.v1
-
-    def _get_socket_client(self):
-        """ Get the WS client class to use
-
-        Returns:
-            class: a WebSocketClient class for the configured version of
-                socket.io
-        """
-        if self._is_version_1():
-            return SocketIOWebSocketClientV1
-
-        return SocketIOWebSocketClient
-
-    def _send_heartbeat(self):
-        """ Send a heartbeat through the socket client.
-
-        This is likely only used in version 1, version 0 sends heartbeats
-        when requested to, so the client takes care of it.
-        """
-        if self._client and not self._client.terminated:
-            self._client._send_heartbeat()
-        else:
-            self.logger.warning(
-                "Cannot send heartbeat to non-connected socket")
-
-    def _stop_heartbeats(self):
-        """ Stop any scheduled heartbeat sending job.
-
-        Most likely only in use in version 1, but safely callable
-        regardless.
-        """
-        if self._heartbeat_job:
-            self._heartbeat_job.cancel()
-            self._heartbeat_job = None
+                self.logger.exception("Could not send message")
 
     def _close_client(self):
         """ Safely close the client and remove the reference """
         try:
+            # The client isn't ready if we're closing
+            self._client_ready = False
             # Try to close the client if it's open
             if self._client:
                 self._client.close()
@@ -204,7 +181,7 @@ class SocketIO(Retry, Block):
         finally:
             self._client = None
 
-    def _create_client(self, url):
+    def _create_client(self, url, connected_event):
         """ Create a WS client object.
 
         This will close any existing clients and re-create a client
@@ -213,32 +190,35 @@ class SocketIO(Retry, Block):
         By the time this function returns, the client is connected and
         ready to send data.
         """
-        # If there is a pending heartbeat job, kill it
-        # we will re-create after connecting
-        self._stop_heartbeats()
+        # We will only want to handle incoming data if the block
+        # has been configured to do so
+        if self.listen():
+            data_callback = self.handle_data
+        else:
+            data_callback = None
 
-        # In case the client is sticking around, close it before creating a
-        # new one
-        self._close_client()
+        self._client = SocketIOWebSocketClient(
+            url=url,
+            room=self.room(),
+            connect_event=connected_event,
+            heartbeat_interval=self._hb_interval,
+            heartbeat_timeout=self._hb_timeout,
+            data_callback=data_callback,
+            disconnect_callback=self.handle_disconnect,
+            logger=self.logger)
 
-        # Get the right version of the socket client class and instantiate it
-        self._client = self._get_socket_client()(url, self)
         self._client.connect()
 
-        # Schedule the heartbeat job only in version 1
-        if self._is_version_1():
-            self._heartbeat_job = Job(
-                self._send_heartbeat,
-                timedelta(seconds=self._hb_interval),
-                repeatable=True)
-
     def _build_socket_url_base(self):
-        if self._is_version_1():
-            self._socket_url_base = "{}:{}/socket.io/".format(
-                self.host(), self.port())
-        else:
-            self._socket_url_base = "{}:{}/socket.io/1/".format(
-                self.host(), self.port())
+        host = self.host()
+        # Default to http protocol
+        # See if they included an http or https in front of the host,
+        host_matched = re.match('^(https?)://(.*)$', host)
+        if host_matched:
+            self._socket_url_protocol = host_matched.group(1)
+            host = host_matched.group(2)
+
+        self._socket_url_base = "{}:{}/socket.io/".format(host, self.port())
 
     def _do_handshake(self):
         """ Perform the socket io handshake.
@@ -251,21 +231,13 @@ class SocketIO(Retry, Block):
         self.logger.debug("Making handshake request to {}".format(
             handshake_url))
 
-        if self._is_version_1():
-            handshake = requests.get(handshake_url)
-        else:
-            handshake = requests.post(handshake_url)
+        handshake = requests.get(handshake_url)
 
         if handshake.status_code != 200:
             raise Exception("Could not complete handshake: %s" %
                             handshake.text)
 
-        self.logger.debug("Parsing handshake response: {}".format(
-            handshake.text))
-        if self._is_version_1():
-            self._parse_v1_response(handshake.text)
-        else:
-            self._parse_v0_response(handshake.text)
+        self._parse_handshake_response(handshake.text)
 
         self.logger.debug("Handshake successful, sid=%s" % self._sid)
 
@@ -275,17 +247,10 @@ class SocketIO(Retry, Block):
 
     def _get_handshake_url(self):
         """ Get the URL to perform the initial handshake request to """
-        if self._is_version_1():
-            return "http://{}?transport=polling".format(self._socket_url_base)
+        return "{}://{}?transport=polling".format(
+            self._socket_url_protocol, self._socket_url_base)
 
-        return "http://{}".format(self._socket_url_base)
-
-    def _parse_v0_response(self, resp_text):
-        """ Parse a socket.io v0 handshake response. """
-        (self._sid, self._hb_interval, self._hb_timeout,
-         self._transports) = resp_text.split(":")
-
-    def _parse_v1_response(self, resp_text):
+    def _parse_handshake_response(self, resp_text):
         """ Parse a socket.io v1 handshake response.
 
         Expected response should look like:
@@ -304,8 +269,5 @@ class SocketIO(Retry, Block):
 
     def _get_ws_url(self):
         """ Get the websocket URL to communciate with """
-        if self._is_version_1():
-            return "ws://{}?transport=websocket&sid={}".format(
-                self._socket_url_base, self._sid)
-
-        return "ws://%swebsocket/%s" % (self._socket_url_base, self._sid)
+        return "ws://{}?transport=websocket&sid={}".format(
+            self._socket_url_base, self._sid)
