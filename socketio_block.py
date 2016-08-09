@@ -88,13 +88,7 @@ class SocketIO(Retry, Block):
 
             status_signal = BlockStatusSignal(
                 RunnerStatus.error, 'Out of retries.')
-
-            # Leaving source for backwards compatibility
-            # In the future, you will know that a status signal is a block
-            # status signal when it contains service_name and name
-            #
-            # TODO: Remove when source gets added to status signals in nio
-            setattr(status_signal, 'source', 'Block')
+            self.notify_management_signal(status_signal)
 
     def reconnect_client(self):
         # Only allow one connection at a time by wrapping this call in a
@@ -153,9 +147,9 @@ class SocketIO(Retry, Block):
             return
 
         if not self._client or not self._client_ready:
-            # self.logger.warning(
-                # "Tried to send to a non-existent or "
-                # "terminated web socket, dropping signals")
+            self.logger.warning(
+                "Tried to send to a non-existent or "
+                "terminated web socket, dropping signals")
             return
 
         for signal in signals:
