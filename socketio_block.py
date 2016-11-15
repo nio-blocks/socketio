@@ -2,6 +2,9 @@ import requests
 import json
 import re
 from threading import Event, BoundedSemaphore
+
+from nio.command import command
+
 from .client.client import SocketIOWebSocketClient
 from nio.block.mixins.retry.retry import Retry
 from nio import Block, Signal
@@ -13,6 +16,7 @@ from nio.util.runner import RunnerStatus
 
 
 @discoverable
+@command('reconnect_client')
 class SocketIO(Retry, Block):
 
     """ A block for communicating with a socket.io server.
