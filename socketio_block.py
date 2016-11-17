@@ -5,6 +5,7 @@ import requests
 
 from nio.block.base import Block
 from nio.block.mixins.retry.retry import Retry
+from nio.command import command
 from nio.properties import BoolProperty, IntProperty, StringProperty, \
     Property, VersionProperty, TimeDeltaProperty
 from nio.signal.base import Signal
@@ -15,6 +16,7 @@ from nio.util.threading import spawn
 from .client.client import SocketIOWebSocketClient
 
 
+@command('reconnect_client')
 class SocketIO(Retry, Block):
 
     """ A block for communicating with a socket.io server.
