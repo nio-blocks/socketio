@@ -59,6 +59,7 @@ class SocketIO(Retry, Block):
         self._socket_url_protocol = "http"
         self._socket_url_base = ""
         self._stopping = False
+        self._disconnect_thread = None
 
     def configure(self, context):
         super().configure(context)
@@ -76,7 +77,7 @@ class SocketIO(Retry, Block):
                 self.logger.info('Could not connect to web socket. Service '
                                  'will be started and this block will attempt '
                                  'to reconnect using given retry strategy.')
-                self.disconnect_thread = spawn(self.handle_disconnect)
+                self._disconnect_thread = spawn(self.handle_disconnect)
             else:
                 raise
 
@@ -87,8 +88,8 @@ class SocketIO(Retry, Block):
         self._stopping = True
         self.logger.debug("Shutting down socket.io client")
 
-        if self.disconnect_thread:
-            self.disconnect_thread.join()
+        if self._disconnect_thread:
+            self._disconnect_thread.join()
 
         self._close_client()
         super().stop()
