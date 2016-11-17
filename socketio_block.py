@@ -1,21 +1,21 @@
-import requests
 import json
 import re
 from threading import Event, BoundedSemaphore
+import requests
 
-from nio.command import command
-
-from .client.client import SocketIOWebSocketClient
+from nio.block.base import Block
 from nio.block.mixins.retry.retry import Retry
-from nio import Block, Signal
-from nio.util.discovery import discoverable
+from nio.command import command
 from nio.properties import BoolProperty, IntProperty, StringProperty, \
     Property, VersionProperty, TimeDeltaProperty
+from nio.signal.base import Signal
 from nio.signal.status import BlockStatusSignal
 from nio.util.runner import RunnerStatus
+from nio.util.threading import spawn
+
+from .client.client import SocketIOWebSocketClient
 
 
-@discoverable
 @command('reconnect_client')
 class SocketIO(Retry, Block):
 
@@ -42,6 +42,8 @@ class SocketIO(Retry, Block):
         title="Connect timeout",
         default={"seconds": 10},
         visible=False)
+    start_without_server = BoolProperty(title="Allow Service Start On Failed "
+                                              "Connection", default=False)
 
     def __init__(self):
         super().__init__()
@@ -57,16 +59,27 @@ class SocketIO(Retry, Block):
         self._socket_url_protocol = "http"
         self._socket_url_base = ""
         self._stopping = False
+        self._disconnect_thread = None
 
     def configure(self, context):
         super().configure(context)
         self._build_socket_url_base()
         # Connect to the socket before starting the block
         # This connection won't happen with a retry, so if the socket
-        # server is not running, the connection will fail and the service
-        # will not start.
-        with self._connection_semaphore:
+        # server is not running, the connection will fail. In this case,
+        # if the user has specified that the service should start anyways,
+        # attempt to reconnect based off of the given retry strategy.
+
+        try:
             self._connect_to_socket()
+        except:
+            if self.start_without_server():
+                self.logger.info('Could not connect to web socket. Service '
+                                 'will be started and this block will attempt '
+                                 'to reconnect using given retry strategy.')
+                self._disconnect_thread = spawn(self.handle_disconnect)
+            else:
+                raise
 
     def stop(self):
         """ Stop the block by closing the client.
@@ -74,6 +87,9 @@ class SocketIO(Retry, Block):
         """
         self._stopping = True
         self.logger.debug("Shutting down socket.io client")
+
+        if self._disconnect_thread:
+            self._disconnect_thread.join()
 
         self._close_client()
         super().stop()
