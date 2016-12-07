@@ -85,5 +85,5 @@ class HeartbeatHandler(object):
         through and the server will respond which will kick start the expiry
         process again.
         """
-        self.logger.error("No heartbeat response was received...reconnecting")
+        self.logger.warning("No heartbeat response was received...reconnecting")
         self._timeout_func()
