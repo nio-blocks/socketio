@@ -289,3 +289,26 @@ class TestSocketIOBlock(NIOBlockTestCase):
         parent_log = super().get_logging_config()
         parent_log['handlers']['default']['level'] = 'INFO'
         return parent_log
+
+    def test_host_name_spaces(self):
+        """ Test that an error isn't thrown when there is a space after the
+        hostname.
+        """
+
+        blk = SocketIO()
+        blk._do_handshake = MagicMock()
+        blk._close_client = MagicMock()
+
+        # this will raise a socket.gaierror if the hostname has a space at the
+        # end/ an invalid host is passed to socket.getaddrinfo(). If the block
+        # is given a valid hostname, it will throw a ConnectionRefusedError
+        # on this test.
+        with self.assertRaises(ConnectionRefusedError):
+            self.configure_block(blk, {
+                "host": "127.0.0.1 ",
+                "port": 80,
+                "room": "myroom",
+                "listen": True,
+                "start_without_server": False,
+            })
+        self.assertFalse(blk._client_ready)

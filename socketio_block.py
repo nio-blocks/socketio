@@ -224,7 +224,7 @@ class SocketIO(Retry, Block):
         self._client.connect()
 
     def _build_socket_url_base(self):
-        host = self.host()
+        host = self.host().strip()
         # Default to http protocol
         # See if they included an http or https in front of the host,
         host_matched = re.match('^(https?)://(.*)$', host)
