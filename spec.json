@@ -1,38 +1,38 @@
 {
-  "nio/SocketIO": {
-    "Description": "Communicate with a [Socket.IO](http://socket.io/) server. Used to send data to a Socket.IO room and to read data from a Socket.IO room.\nEvery input signal will be sent to the Socket.IO server *room* and everything sent to that room will be notifed as an output signal.\nTo send an entire signal, set *content* to `json.dumps(signal.to_dict())`.",
-    "Output": "One signal for every event emitted from the Socket.IO room.",
-    "Version": "1.0.0",
-    "Input": "Each input signal is sent as an event to the Socket.IO room.",
-    "Category": "Communication",
-    "Commands": {
-      "reconnect_client": {
-        "description": "reconnect to a disconnected client."
-      }
-    },
-    "Dependencies": [
-      "-   [requests](https://pypi.python.org/pypi/requests/)",
-      "-   [ws4py](https://pypi.python.org/pypi/ws4py)"
-    ],
-    "Properties": {
-      "start_without_server": {
-        "description": "Allow the service in which this block is running to start even if it is unable to connect to the client initially. The block will then try to reconnect given the retry strategy."
-      },
-      "room": {
-        "description": "Socket.IO room."
-      },
-      "port": {
-        "description": "Socket.IO server port."
-      },
-      "host": {
-        "description": "Socket.IO server location."
-      },
-      "content": {
-        "description": "Content to send to room. Should be json encoded."
-      },
-      "listen": {
-        "description": "whether or not the block should listen to messages from the SocketIo room."
-      }
+    "nio/SocketIO": {
+        "Properties": {
+            "port": {
+                "description": "Socket.IO server port."
+            },
+            "room": {
+                "description": "Socket.IO room."
+            },
+            "content": {
+                "description": "Content to send to room. Should be json encoded."
+            },
+            "start_without_server": {
+                "description": "Allow the service in which this block is running to start even if it is unable to connect to the client initially. The block will then try to reconnect given the retry strategy."
+            },
+            "host": {
+                "description": "Socket.IO server location."
+            },
+            "listen": {
+                "description": "whether or not the block should listen to messages from the SocketIo room."
+            }
+        },
+        "Version": "1.0.0",
+        "Input": {
+            "Description": "Each input signal is sent as an event to the Socket.IO room."
+        },
+        "Category": "Communication",
+        "Commands": {
+            "reconnect_client": {
+                "description": "reconnect to a disconnected client."
+            }
+        },
+        "Description": "Communicate with a [Socket.IO](http://socket.io/) server. Used to send data to a Socket.IO room and to read data from a Socket.IO room.\nEvery input signal will be sent to the Socket.IO server *room* and everything sent to that room will be notifed as an output signal.\nTo send an entire signal, set *content* to `json.dumps(signal.to_dict())`.",
+        "Output": {
+            "Description": "One signal for every event emitted from the Socket.IO room."
+        }
     }
-  }
 }
