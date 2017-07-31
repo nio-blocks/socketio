@@ -16,8 +16,8 @@ class TestSocketIOBlock(NIOBlockTestCase):
 
         client_class = "{}.{}".format(
             blk.__module__, 'SocketIOWebSocketClient')
-        with patch(client_class) as mock_client, \
-             patch.object(Event, 'wait') as mock_event_wait:
+        with patch(client_class) as mock_client,\
+                patch.object(Event, 'wait') as mock_event_wait:
             # Simulate the connection event returning in time
             mock_event_wait.return_value = True
             blk._sid = "samplesid"
@@ -48,7 +48,7 @@ class TestSocketIOBlock(NIOBlockTestCase):
         client_class = "{}.{}".format(
             blk.__module__, 'SocketIOWebSocketClient')
         with patch(client_class) as mock_client, \
-             patch.object(Event, 'wait') as mock_event_wait:
+                patch.object(Event, 'wait') as mock_event_wait:
             # Simulate the connection event returning in time
             mock_event_wait.return_value = True
             blk._sid = "samplesid"
@@ -104,8 +104,8 @@ class TestSocketIOBlock(NIOBlockTestCase):
 
         client_class = "{}.{}".format(
             blk.__module__, 'SocketIOWebSocketClient')
-        with patch(client_class), \
-             patch.object(Event, 'wait') as mock_event_wait:
+        with patch(client_class),\
+                patch.object(Event, 'wait') as mock_event_wait:
             # Simulate the connection event timing out
             mock_event_wait.return_value = False
             with self.assertRaises(Exception):
@@ -125,8 +125,8 @@ class TestSocketIOBlock(NIOBlockTestCase):
         blk._do_handshake = MagicMock()
 
         with patch.object(SocketIOWebSocketClient, 'connect') as mock_conn, \
-             patch.object(SocketIOWebSocketClient, 'close') as mock_close, \
-             patch.object(Event, 'wait') as mock_wait:
+                patch.object(SocketIOWebSocketClient, 'close') as mock_close, \
+                patch.object(Event, 'wait') as mock_wait:
             # Simulate the connection event happening properly and in time
             mock_wait.return_value = True
 
@@ -163,7 +163,7 @@ class TestSocketIOBlock(NIOBlockTestCase):
         blk._do_handshake = MagicMock()
 
         with patch.object(SocketIOWebSocketClient, 'connect') as mock_conn, \
-             patch.object(Event, 'wait') as mock_wait:
+                patch.object(Event, 'wait') as mock_wait:
             # Simulate the connection event happening properly and in time
             mock_wait.return_value = True
 
@@ -303,12 +303,20 @@ class TestSocketIOBlock(NIOBlockTestCase):
         # end/ an invalid host is passed to socket.getaddrinfo(). If the block
         # is given a valid hostname, it will throw a ConnectionRefusedError
         # on this test.
-        with self.assertRaises(ConnectionRefusedError):
-            self.configure_block(blk, {
-                "host": "127.0.0.1 ",
-                "port": 80,
-                "room": "myroom",
-                "listen": True,
-                "start_without_server": False,
-            })
+
+        # mock connection
+        # set return value to be ConnectionRefusedError
+        client_class = "{}.{}".format(
+            blk.__module__, 'SocketIOWebSocketClient')
+        with patch(client_class) as mock_client:
+            mock_client.return_value.connect.side_effect = \
+                ConnectionRefusedError
+            with self.assertRaises(ConnectionRefusedError):
+                self.configure_block(blk, {
+                    "host": "127.0.0.1 ",
+                    "port": 80,
+                    "room": "myroom",
+                    "listen": True,
+                    "start_without_server": False,
+                })
         self.assertFalse(blk._client_ready)
