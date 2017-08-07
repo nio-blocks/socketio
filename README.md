@@ -14,7 +14,7 @@ Properties
 -   **port**: Socket.IO server port.
 -   **room**: Socket.IO room.
 -   **content**: Content to send to room. Should be json encoded.
--   **listen**: whether or not the block should listen to messages from the SocketIo room.
+-   **listen**: Whether or not the block should listen to messages from the SocketIo room.
 -   **start_without_server**: Allow the service in which this block is running to start even if it is unable to connect to the client initially. The block will then try to reconnect given the retry strategy.
 
 
@@ -26,7 +26,7 @@ Dependencies
 
 Commands
 ----------------
--   **reconnect_client**: reconnect to a disconnected client. 
+-   **reconnect_client**: Reconnect to a disconnected client. 
 
 Input
 -------

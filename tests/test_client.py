@@ -1,6 +1,8 @@
 from time import sleep
 from unittest.mock import MagicMock
+
 from nio.testing import NIOTestCase
+
 from ..client.heartbeats import HeartbeatHandler
 
 
@@ -11,14 +13,13 @@ class TestClient(NIOTestCase):
 
         This test contains sleeps.
         """
-        # Some variables to use for this test
-        #
+
         # How often to send heartbeats
         heartbeat_interval = 0.2
-        #
+
         # How long to wait for a response
         heartbeat_timeout = heartbeat_interval * 2.5
-        #
+
         # How much time to wait after an expected action should have occurred.
         # Make this delta small to make the test run faster, make it large to
         # prevent race conditions.

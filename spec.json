@@ -1,10 +1,70 @@
 {
   "nio/SocketIO": {
-    "version": "0.0.1",
-    "description": "",
-    "inputs": {},
-    "outputs": {},
-    "properties": {},
-    "commands": {}
+    "version": "2.0.0",
+    "description": "Communicate with a Socket.IO server. Used to send data to a Socket.IO room and to read data from a Socket.IO room.",
+    "properties": {
+      "connect_timeout": {
+        "title": "Connect timeout",
+        "description": "How long to wait for the client to report that it is connected.",
+        "default": {
+          "seconds": 10
+        }
+      },
+      "content": {
+        "title": "Content",
+        "description": "Content to send to room. Should be json encoded.",
+        "default": "{{ json.dumps($to_dict(), default=str) }}"
+      },
+      "host": {
+        "title": "SocketIo Host",
+        "description": "Socket.IO server location to connect to.",
+        "default": "127.0.0.1"
+      },
+      "listen": {
+        "title": "Listen to SocketIo Room",
+        "description": "Whether or not the block should listen to messages from the SocketIo room.",
+        "default": false
+      },
+      "port": {
+        "title": "Port",
+        "description": "Socket.IO server port to connect to.",
+        "default": 443
+      },
+      "retry_options": {
+        "title": "Retry Options",
+        "description": "Options to configure how many attempts and how long to keep retrying to connect to socket room.",
+        "default": {
+          "indefinite": false,
+          "max_retry": 5,
+          "multiplier": 1,
+          "strategy": "linear"
+        }
+      },
+      "room": {
+        "title": "Socket.io Room",
+        "description": "Socket.IO room to connect to.",
+        "default": "default"
+      },
+      "start_without_server": {
+        "title": "Allow Service Start On Failed Connection",
+        "description": "Allow the service in which this block is running to start even if it is unable to connect to the client initially. The block will then try to reconnect given the retry strategy.",
+        "default": false
+      }
+    },
+    "inputs": {
+      "default": {
+        "description": "Signal to be sent as an event to the Socket.IO room."
+      }
+    },
+    "outputs": {
+      "default": {
+        "description": "One signal for every event emitted from the Socket.IO room."
+      }
+    },
+    "commands": {
+      "reconnect_client": {
+        "description": "Reconnect to a disconnected client."
+      }
+    }
   }
 }
