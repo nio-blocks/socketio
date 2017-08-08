@@ -1,10 +1,12 @@
 from unittest.mock import MagicMock, patch
 from threading import Event
-from ..socketio_block import SocketIO, SocketIOWebSocketClient
+
 from nio import Signal
 from nio.block.terminals import DEFAULT_TERMINAL
 from nio.testing import NIOBlockTestCase
 from nio.util.runner import RunnerStatus
+
+from ..socketio_block import SocketIO, SocketIOWebSocketClient
 
 
 class TestSocketIOBlock(NIOBlockTestCase):
