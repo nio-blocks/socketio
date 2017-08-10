@@ -1,7 +1,7 @@
 {
   "nio/SocketIO": {
     "language": "Python",
-    "version": "2.0.0",
-    "reference": "github.com/nio-blocks/socketio.git@v2.0.0"
+    "reference": "git@github.com:nio-blocks/socketio.git@v2.0.0",
+    "version": "2.0.0"
   }
 }

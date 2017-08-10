@@ -1,37 +1,31 @@
 SocketIO
-===========
-
-Communicate with a [Socket.IO](http://socket.io/) server. Used to send data to a Socket.IO room and to read data from a Socket.IO room.
-
-Every input signal will be sent to the Socket.IO server *room* and everything sent to that room will be notifed as an output signal.
-
-To send an entire signal, set *content* to `json.dumps(signal.to_dict())`.
+========
+Communicate with a Socket.IO server. Used to send data to a Socket.IO room and to read data from a Socket.IO room.
 
 Properties
---------------
+----------
+- **connect_timeout**: How long to wait for the client to report that it is connected.
+- **content**: Content to send to room. Should be json encoded.
+- **host**: Socket.IO server location to connect to.
+- **listen**: Whether or not the block should listen to messages from the SocketIo room.
+- **port**: Socket.IO server port to connect to.
+- **retry_options**: Options to configure how many attempts and how long to keep retrying to connect to socket room.
+- **room**: Socket.IO room to connect to.
+- **start_without_server**: Allow the service in which this block is running to start even if it is unable to connect to the client initially. The block will then try to reconnect given the retry strategy.
 
--   **host**: Socket.IO server location.
--   **port**: Socket.IO server port.
--   **room**: Socket.IO room.
--   **content**: Content to send to room. Should be json encoded.
--   **listen**: Whether or not the block should listen to messages from the SocketIo room.
--   **start_without_server**: Allow the service in which this block is running to start even if it is unable to connect to the client initially. The block will then try to reconnect given the retry strategy.
+Inputs
+------
+- **default**: Signal to be sent as an event to the Socket.IO room.
 
-
-Dependencies
-----------------
-
--   [requests](https://pypi.python.org/pypi/requests/)
--   [ws4py](https://pypi.python.org/pypi/ws4py)
+Outputs
+-------
+- **default**: One signal for every event emitted from the Socket.IO room.
 
 Commands
-----------------
--   **reconnect_client**: Reconnect to a disconnected client. 
+--------
+- **reconnect_client**: Reconnect to a disconnected client.
 
-Input
--------
-Each input signal is sent as an event to the Socket.IO room.
-
-Output
----------
-One signal for every event emitted from the Socket.IO room.
+Dependencies
+------------
+-   [requests](https://pypi.python.org/pypi/requests/)
+-   [ws4py](https://pypi.python.org/pypi/ws4py)
