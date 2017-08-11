@@ -42,8 +42,8 @@
         "default": {
           "max_retry": 5,
           "strategy": "linear",
-          "indefinite": false,
-          "multiplier": 1
+          "multiplier": 1,
+          "indefinite": false
         }
       },
       "room": {
@@ -71,7 +71,8 @@
     },
     "commands": {
       "reconnect_client": {
-        "description": "Reconnect to a disconnected client."
+        "description": "Reconnect to a disconnected client.",
+        "params": {}
       }
     }
   }
