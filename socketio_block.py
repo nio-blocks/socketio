@@ -15,6 +15,12 @@ from nio.util.threading import spawn
 
 from .client.client import SocketIOWebSocketClient
 
+from enum import Enum
+
+class WS_Protocols(Enum):
+    ws = "ws"
+    wss = "wss"
+
 
 @command('reconnect_client')
 class SocketIO(Retry, Block):
@@ -44,6 +50,7 @@ class SocketIO(Retry, Block):
         visible=False)
     start_without_server = BoolProperty(title="Allow Service Start On Failed "
                                               "Connection", default=False)
+    wsp = SelectProperty(WS_Protocols, title="Websocket Protocol", default="wss"
 
     def __init__(self):
         super().__init__()
@@ -283,5 +290,5 @@ class SocketIO(Retry, Block):
 
     def _get_ws_url(self):
         """ Get the websocket URL to communciate with """
-        return "wss://{}?transport=websocket&sid={}".format(
+        return "{}://{}?transport=websocket&sid={}".format(self.wsp().value,
             self._socket_url_base, self._sid)
