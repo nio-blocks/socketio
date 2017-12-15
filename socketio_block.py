@@ -283,5 +283,5 @@ class SocketIO(Retry, Block):
 
     def _get_ws_url(self):
         """ Get the websocket URL to communciate with """
-        return "ws://{}?transport=websocket&sid={}".format(
+        return "wss://{}?transport=websocket&sid={}".format(
             self._socket_url_base, self._sid)
