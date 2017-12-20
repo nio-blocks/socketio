@@ -7,7 +7,7 @@ from nio.block.base import Block
 from nio.block.mixins.retry.retry import Retry
 from nio.command import command
 from nio.properties import BoolProperty, IntProperty, StringProperty, \
-    Property, VersionProperty, TimeDeltaProperty
+    Property, VersionProperty, TimeDeltaProperty, SelectProperty
 from nio.signal.base import Signal
 from nio.signal.status import BlockStatusSignal
 from nio.util.runner import RunnerStatus
@@ -50,7 +50,7 @@ class SocketIO(Retry, Block):
         visible=False)
     start_without_server = BoolProperty(title="Allow Service Start On Failed "
                                               "Connection", default=False)
-    wsp = SelectProperty(WS_Protocols, title="Websocket Protocol", default="wss"
+    wsp = SelectProperty(WS_Protocols, title="Websocket Protocol", default="ws")
 
     def __init__(self):
         super().__init__()
